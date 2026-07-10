@@ -1,0 +1,16 @@
+[theme]
+# Forces the app to be in Light Mode
+base="light"
+
+# Main brand color for buttons and highlights (Annamithra Orange)
+primaryColor="#FF8C00"
+
+# Main app background color (Clean Off-White)
+backgroundColor="#F8F9FA"
+
+# Sidebar background color (Slightly darker for contrast)
+secondaryBackgroundColor="#E9ECEF"
+
+# Text color (Dark grey for readability)
+textColor="#262730"
+font="sans serif"
