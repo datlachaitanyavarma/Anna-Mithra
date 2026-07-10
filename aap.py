@@ -2,7 +2,6 @@ import streamlit as st
 import datetime
 
 # --- 1. PAGE CONFIGURATION ---
-# App icon and title update
 st.set_page_config(page_title="Annamithra - Food Distribution", page_icon="🤝", layout="centered")
 
 # Initialize session state for database simulation
@@ -11,8 +10,8 @@ if 'donations' not in st.session_state:
 
 # --- 2. SIDEBAR (ABOUT US) ---
 with st.sidebar:
-    # Burger theesesi Charity/Donation Box icon pettam
-    st.image("https://cdn-icons-png.flaticon.com/512/3349/3349286.png", width=80)
+    # Mouse icon theesesi, pakka ga kanipinche Donation Emojis pettanu
+    st.markdown("<h1 style='text-align: center;'>📦🤝🍲</h1>", unsafe_allow_html=True)
     st.title("Annamithra")
     st.info("Our mission is to achieve zero food waste by bridging the gap between donors and NGOs.")
     st.divider()
@@ -21,8 +20,13 @@ with st.sidebar:
     st.write("© 2026 Annamithra Platform")
 
 # --- 3. MAIN VISUAL BANNER (DONOR TO NGO CONCEPT) ---
-# Ide meeru adigina theme. Okaru inkokariki food isthunna high-quality visual banner.
-st.image("https://images.unsplash.com/photo-1593113565694-c700fae626d2?q=80&w=1920&auto=format&fit=crop", use_container_width=True)
+# Okaru food waste cheyakunda NGO ki isthunattu exact visual. 
+# HTML format lo isthunnanu so that eppatiki link break avvadu.
+st.markdown('''
+    <img src="https://images.pexels.com/photos/6995201/pexels-photo-6995201.jpeg" 
+         alt="Donor giving food to NGO" 
+         style="width: 100%; border-radius: 12px; margin-bottom: 20px; object-fit: cover; max-height: 350px;">
+''', unsafe_allow_html=True)
 
 # --- 4. MAIN HEADER & ANALYTICS DASHBOARD ---
 st.title("🤝 Annamithra: Food Waste Management")
@@ -55,7 +59,6 @@ with tab1:
             
         location = st.text_input("Pickup Location / Address")
         
-        # Submit button with custom styling directly from Streamlit configuration
         submit_btn = st.form_submit_button("Submit Food Details", use_container_width=True)
         
         if submit_btn:
@@ -107,4 +110,3 @@ with tab2:
             st.write(f"- **{d['donor']}** (Claimed)")
     else:
         st.write("No completed pickups yet.")
-        
