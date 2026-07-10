@@ -8,20 +8,36 @@ st.set_page_config(page_title="Annamithra - Food Distribution", page_icon="🤝"
 if 'donations' not in st.session_state:
     st.session_state.donations = []
 
-# --- 2. SIDEBAR (ABOUT US) ---
+# --- 2. SIDEBAR (ABOUT US) WITH NEW SVG LOGO ---
 with st.sidebar:
-    # Mouse icon theesesi, pakka ga kanipinche Donation Emojis pettanu
-    st.markdown("<h1 style='text-align: center;'>📦🤝🍲</h1>", unsafe_allow_html=True)
-    st.title("Annamithra")
+    # 🌟 NEW PROFESSIONAL SVG LOGO HERE 🌟
+    logo_svg = """
+    <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="130" height="130">
+          <!-- Green Eco/Charity Background -->
+          <path d="M100,100 C60,60 20,80 40,120 C55,145 80,165 100,175 C120,165 145,145 160,120 C180,80 140,60 100,100 Z" fill="#2E8B57" opacity="0.15"/>
+          
+          <!-- Orange Food Bowl -->
+          <path d="M30,120 A70,55 0 0,0 170,120 Z" fill="#FF8C00"/>
+          <path d="M30,120 A70,15 0 0,0 170,120 A70,15 0 0,0 30,120 Z" fill="#E07B00"/>
+          
+          <!-- Steam / Hot Food Indication -->
+          <path d="M75,100 Q85,60 75,30" stroke="#FF8C00" stroke-width="8" fill="none" stroke-linecap="round"/>
+          <path d="M125,100 Q115,60 125,30" stroke="#FF8C00" stroke-width="8" fill="none" stroke-linecap="round"/>
+          <path d="M100,90 Q100,50 100,20" stroke="#2E8B57" stroke-width="8" fill="none" stroke-linecap="round"/>
+        </svg>
+    </div>
+    """
+    st.markdown(logo_svg, unsafe_allow_html=True)
+    
+    st.markdown("<h2 style='text-align: center; color: #FF8C00; margin-top: -15px;'>Annamithra</h2>", unsafe_allow_html=True)
     st.info("Our mission is to achieve zero food waste by bridging the gap between donors and NGOs.")
     st.divider()
     st.write("📍 **Operating in:** Vepagunta, AP")
     st.write("📧 contact@annamithra.org")
     st.write("© 2026 Annamithra Platform")
 
-# --- 3. MAIN VISUAL BANNER (DONOR TO NGO CONCEPT) ---
-# Okaru food waste cheyakunda NGO ki isthunattu exact visual. 
-# HTML format lo isthunnanu so that eppatiki link break avvadu.
+# --- 3. MAIN VISUAL BANNER ---
 st.markdown('''
     <img src="https://images.pexels.com/photos/6995201/pexels-photo-6995201.jpeg" 
          alt="Donor giving food to NGO" 
