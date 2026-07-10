@@ -2,49 +2,17 @@ import streamlit as st
 import datetime
 
 # --- 1. PAGE CONFIGURATION ---
-st.set_page_config(page_title="Annamithra - Food Distribution", page_icon="🍲", layout="centered")
-
-# --- 2. CORPORATE UI & BACKGROUND CSS ---
-page_bg_img = '''
-<style>
-/* Background Image with a light overlay */
-[data-testid="stAppViewContainer"] {
-    background-image: url("https://images.unsplash.com/photo-1593113565694-c700fae626d2?q=80&w=1920&auto=format&fit=crop");
-    background-size: cover;
-    background-position: center;
-    background-attachment: fixed;
-}
-[data-testid="stAppViewContainer"]::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background-color: rgba(255, 255, 255, 0.90); /* 90% white overlay for reading text easily */
-    z-index: -1;
-}
-/* Styling the submit button */
-div.stButton > button:first-child {
-    background-color: #FF8C00;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 24px;
-    font-weight: bold;
-}
-div.stButton > button:first-child:hover {
-    background-color: #2E8B57; /* Turns green on hover */
-    color: white;
-}
-</style>
-'''
-st.markdown(page_bg_img, unsafe_allow_html=True)
+# App icon and title update
+st.set_page_config(page_title="Annamithra - Food Distribution", page_icon="🤝", layout="centered")
 
 # Initialize session state for database simulation
 if 'donations' not in st.session_state:
     st.session_state.donations = []
 
-# --- 3. SIDEBAR (ABOUT US) ---
+# --- 2. SIDEBAR (ABOUT US) ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3075/3075977.png", width=80)
+    # Burger theesesi Charity/Donation Box icon pettam
+    st.image("https://cdn-icons-png.flaticon.com/512/3349/3349286.png", width=80)
     st.title("Annamithra")
     st.info("Our mission is to achieve zero food waste by bridging the gap between donors and NGOs.")
     st.divider()
@@ -52,9 +20,13 @@ with st.sidebar:
     st.write("📧 contact@annamithra.org")
     st.write("© 2026 Annamithra Platform")
 
+# --- 3. MAIN VISUAL BANNER (DONOR TO NGO CONCEPT) ---
+# Ide meeru adigina theme. Okaru inkokariki food isthunna high-quality visual banner.
+st.image("https://images.unsplash.com/photo-1593113565694-c700fae626d2?q=80&w=1920&auto=format&fit=crop", use_container_width=True)
+
 # --- 4. MAIN HEADER & ANALYTICS DASHBOARD ---
-st.title("🍲 Annamithra: Food Waste Management")
-st.write("Connecting surplus food with NGOs and orphanages to eliminate waste.")
+st.title("🤝 Annamithra: Food Waste Management")
+st.write("Connecting surplus food from individuals and restaurants directly to orphanages and NGOs.")
 
 st.markdown("### 📊 Platform Impact")
 col1, col2, col3 = st.columns(3)
@@ -83,7 +55,8 @@ with tab1:
             
         location = st.text_input("Pickup Location / Address")
         
-        submit_btn = st.form_submit_button("Submit Food Details")
+        # Submit button with custom styling directly from Streamlit configuration
+        submit_btn = st.form_submit_button("Submit Food Details", use_container_width=True)
         
         if submit_btn:
             if donor_name and location:
@@ -134,3 +107,4 @@ with tab2:
             st.write(f"- **{d['donor']}** (Claimed)")
     else:
         st.write("No completed pickups yet.")
+        
