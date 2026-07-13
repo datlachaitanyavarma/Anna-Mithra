@@ -8,6 +8,9 @@ st.set_page_config(page_title="Annamithra - Food & Fund Platform", page_icon="�
 
 DB_FILE = "database.json"
 
+# --- INDIAN STANDARD TIME (IST) SETUP ---
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
 # --- 2. DATABASE SYSTEM ---
 def load_data():
     if os.path.exists(DB_FILE):
@@ -94,8 +97,6 @@ else:
         
         with tab1:
             st.subheader("Submit Surplus Food")
-            
-            # MOVED OUTSIDE THE FORM TO UPDATE LIVE
             st.info("👇 Select Food Category first, then fill the details in the box.")
             food_category = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
             
@@ -121,6 +122,8 @@ else:
                     if not contact or not location or not food_items:
                         st.error("⚠️ Please fill Contact Number, Food Items, and Location!")
                     else:
+                        # IST Time implementation
+                        current_time = datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
                         st.session_state.db["donations"].append({
                             "id": len(st.session_state.db["donations"]) + 1,
                             "donor": st.session_state.current_user,
@@ -130,7 +133,7 @@ else:
                             "veg_boxes": v_boxes, "veg_serves": v_serves,
                             "nv_boxes": nv_boxes, "nv_serves": nv_serves,
                             "location": location,
-                            "time": datetime.datetime.now().strftime("%I:%M %p"),
+                            "time": current_time,
                             "status": "Available"
                         })
                         save_data(st.session_state.db)
@@ -178,7 +181,7 @@ else:
                 for d in reversed(my_donations):
                     with st.container(border=True):
                         st.write(f"📅 **{d.get('time', 'Unknown Time')}** | Status: **{d.get('status', 'Unknown')}**")
-                        st.write(f"**Items:** {d.get('items', 'Not specified (Legacy Data)')}")
+                        st.write(f"**Items:** {d.get('items', 'Not specified')}")
                         
                         v_serves = d.get('veg_serves', 0)
                         if v_serves > 0:
@@ -191,7 +194,8 @@ else:
     # --- NGO DASHBOARD ---
     elif st.session_state.current_role == "NGO / Orphanage":
         st.title(f"🏢 {st.session_state.current_user}")
-        tab1, tab2, tab3 = st.tabs(["🔔 Available Food", "📢 Request Funds", "📂 My Requests"])
+        # Added a new tab for "Accepted Pickups"
+        tab1, tab2, tab3, tab4 = st.tabs(["🔔 Available Food", "✅ Accepted Pickups", "📢 Request Funds", "📂 My Fund Requests"])
         
         with tab1:
             st.subheader("Live Food Alerts")
@@ -201,9 +205,9 @@ else:
             else:
                 for idx, d in enumerate(available):
                     with st.container(border=True):
-                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | 📞 **Contact:** {d.get('contact', 'N/A')}")
-                        st.write(f"📍 **Address:** {d.get('location', 'N/A')}")
-                        st.write(f"🍲 **Items:** {d.get('items', 'Not specified (Legacy Data)')}")
+                        st.write(f"📅 **Time Posted:** {d.get('time', 'Unknown')}")
+                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | 📍 **Address:** {d.get('location', 'N/A')}")
+                        st.write(f"🍲 **Items:** {d.get('items', 'Not specified')}")
                         st.write(f"**Category:** {d.get('category', 'N/A')} | Veg Serves: {d.get('veg_serves', 0)} | Non-Veg Serves: {d.get('nv_serves', 0)}")
                         
                         safe_id = d.get('id', f"legacy_{idx}")
@@ -211,10 +215,27 @@ else:
                         if st.button(f"Accept Pickup", key=f"acc_{safe_id}", use_container_width=True):
                             d['status'] = f"Accepted by {st.session_state.current_user}"
                             save_data(st.session_state.db)
-                            st.success("🎉 Accepted! Please call the donor to arrange pickup.")
+                            st.success("🎉 Accepted! Check 'Accepted Pickups' tab for donor contact details.")
                             st.rerun()
 
         with tab2:
+            st.subheader("Food You Have Accepted")
+            # Filter only the food accepted by THIS logged-in NGO
+            my_pickups = [d for d in st.session_state.db["donations"] if d.get("status") == f"Accepted by {st.session_state.current_user}"]
+            
+            if not my_pickups:
+                st.info("You haven't accepted any food pickups yet.")
+            else:
+                for d in reversed(my_pickups):
+                    with st.container(border=True):
+                        st.success("✅ Co-ordinate with the donor to collect this food.")
+                        st.write(f"📅 **Time Posted:** {d.get('time', 'Unknown')}")
+                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | 📞 **Contact:** {d.get('contact', 'N/A')}")
+                        st.write(f"📍 **Address:** {d.get('location', 'N/A')}")
+                        st.write(f"🍲 **Items:** {d.get('items', 'Not specified')}")
+                        st.write(f"**Category:** {d.get('category', 'N/A')} | Veg Serves: {d.get('veg_serves', 0)} | Non-Veg Serves: {d.get('nv_serves', 0)}")
+
+        with tab3:
             st.subheader("Post Emergency Need")
             with st.form("fund_form"):
                 reason = st.text_input("Reason (e.g. Groceries)")
@@ -234,8 +255,8 @@ else:
                     else:
                         st.error("Please provide Reason and UPI ID.")
 
-        with tab3:
-            st.subheader("My Active & Completed Requests")
+        with tab4:
+            st.subheader("My Active & Completed Fund Requests")
             my_reqs = [r for r in st.session_state.db["fund_requests"] if r.get("ngo") == st.session_state.current_user]
             for req in reversed(my_reqs):
                 with st.container(border=True):
@@ -257,4 +278,4 @@ else:
         st.dataframe(st.session_state.db["donations"], use_container_width=True)
         st.subheader("Fund Requests")
         st.dataframe(st.session_state.db["fund_requests"], use_container_width=True)
-                        
+                    
