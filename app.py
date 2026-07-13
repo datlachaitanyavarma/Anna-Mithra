@@ -17,14 +17,17 @@ def load_data():
         with open(DB_FILE, "r") as f:
             data = json.load(f)
             if "users" not in data:
-                data["users"] = [{"username": "admin", "password": "123", "role": "Admin Portal"}]
-                save_data(data)
+                data["users"] = [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}]
+            if "fund_transactions" not in data:
+                data["fund_transactions"] = [] 
+            save_data(data)
             return data
     else:
         return {
-            "users": [{"username": "admin", "password": "123", "role": "Admin Portal"}],
+            "users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}],
             "donations": [],
-            "fund_requests": []
+            "fund_requests": [],
+            "fund_transactions": []
         }
 
 def save_data(data):
@@ -69,25 +72,34 @@ if not st.session_state.logged_in:
                 log_pass = st.text_input("Password", type="password")
                 if st.button("Login", type="primary", use_container_width=True):
                     for u in st.session_state.db["users"]:
-                        if u["username"] == log_user and u["password"] == log_pass:
+                        # Case insensitive check for Admin
+                        if u["username"].lower() == log_user.lower() and u["password"] == log_pass:
                             st.session_state.logged_in = True
                             st.session_state.current_user = u["username"]
                             st.session_state.current_role = u["role"]
                             st.rerun()
         with auth_tab2:
             with st.container(border=True):
-                new_user = st.text_input("Choose Username")
-                new_pass = st.text_input("Create Password", type="password")
+                new_user = st.text_input("Choose Username *")
+                new_pass = st.text_input("Create Password *", type="password")
+                new_mobile = st.text_input("Mobile Number (Mandatory) *")
+                new_email = st.text_input("Email Address (Optional)")
                 new_role = st.selectbox("I am a:", ["Donor (Individual/Hotel)", "NGO / Orphanage"])
                 if st.button("Create Account", type="primary", use_container_width=True):
-                    if any(u["username"] == new_user for u in st.session_state.db["users"]):
+                    if any(u["username"].lower() == new_user.lower() for u in st.session_state.db["users"]):
                         st.error("Username already exists!")
-                    elif new_user and new_pass:
-                        st.session_state.db["users"].append({"username": new_user, "password": new_pass, "role": new_role})
+                    elif new_user and new_pass and new_mobile:
+                        st.session_state.db["users"].append({
+                            "username": new_user, 
+                            "password": new_pass, 
+                            "role": new_role,
+                            "mobile": new_mobile,
+                            "email": new_email
+                        })
                         save_data(st.session_state.db)
                         st.success("✅ Account created! You can now Login.")
                     else:
-                        st.error("Please fill all fields.")
+                        st.error("⚠️ Please fill all mandatory (*) fields including Mobile Number.")
 
 else:
     # --- DONOR DASHBOARD ---
@@ -101,7 +113,7 @@ else:
             food_category = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
             
             with st.form("donation_form"):
-                contact = st.text_input("Contact Number (Mandatory) *")
+                contact = st.text_input("Contact Number (For this pickup) *")
                 food_items = st.text_area("What food items are you donating? (e.g., Rice, Dal, Chicken Curry) *")
                 
                 v_boxes = v_serves = nv_boxes = nv_serves = 0
@@ -122,7 +134,6 @@ else:
                     if not contact or not location or not food_items:
                         st.error("⚠️ Please fill Contact Number, Food Items, and Location!")
                     else:
-                        # IST Time implementation
                         current_time = datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
                         st.session_state.db["donations"].append({
                             "id": len(st.session_state.db["donations"]) + 1,
@@ -163,6 +174,18 @@ else:
                                 req['raised'] = raised + amt
                                 if req['raised'] >= goal:
                                     req['status'] = "Completed"
+                                    
+                                current_time = datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
+                                if "fund_transactions" not in st.session_state.db:
+                                    st.session_state.db["fund_transactions"] = []
+                                st.session_state.db["fund_transactions"].append({
+                                    "donor": st.session_state.current_user,
+                                    "ngo": req.get('ngo', 'NGO'),
+                                    "amount": amt,
+                                    "reason": req.get('reason', 'Help'),
+                                    "time": current_time
+                                })
+                                
                                 save_data(st.session_state.db)
                                 st.success(f"💖 Thank you for your donation of ₹{amt}!")
                                 st.rerun()
@@ -172,7 +195,21 @@ else:
                         st.success(f"Goal of ₹{req.get('goal', 0)} was successfully raised! Thank you.")
         
         with tab3:
-            st.subheader("My Past Food Donations")
+            st.subheader("💰 My Fund Donations")
+            my_funds = [f for f in st.session_state.db.get("fund_transactions", []) if f.get("donor") == st.session_state.current_user]
+            
+            if not my_funds:
+                st.info("You haven't made any fund donations yet.")
+            else:
+                for f in reversed(my_funds):
+                    with st.container(border=True):
+                        st.write(f"📅 **{f.get('time', 'Unknown Time')}**")
+                        st.write(f"💖 **Donated:** ₹{f.get('amount', 0)} to **{f.get('ngo', 'Unknown NGO')}**")
+                        st.write(f"📌 **For:** {f.get('reason', 'Emergency Need')}")
+                        
+            st.divider()
+            
+            st.subheader("🍱 My Past Food Donations")
             my_donations = [d for d in st.session_state.db["donations"] if d.get("donor") == st.session_state.current_user]
             
             if not my_donations:
@@ -194,8 +231,7 @@ else:
     # --- NGO DASHBOARD ---
     elif st.session_state.current_role == "NGO / Orphanage":
         st.title(f"🏢 {st.session_state.current_user}")
-        # Added a new tab for "Accepted Pickups"
-        tab1, tab2, tab3, tab4 = st.tabs(["🔔 Available Food", "✅ Accepted Pickups", "📢 Request Funds", "📂 My Fund Requests"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔔 Available Food", "✅ Accepted Pickups", "📢 Request Funds", "📂 My Fund Requests", "💖 Fund Donors"])
         
         with tab1:
             st.subheader("Live Food Alerts")
@@ -220,7 +256,6 @@ else:
 
         with tab2:
             st.subheader("Food You Have Accepted")
-            # Filter only the food accepted by THIS logged-in NGO
             my_pickups = [d for d in st.session_state.db["donations"] if d.get("status") == f"Accepted by {st.session_state.current_user}"]
             
             if not my_pickups:
@@ -266,16 +301,54 @@ else:
                     goal = req.get('goal', 1)
                     raised = req.get('raised', 0)
                     st.progress(min(raised / goal if goal > 0 else 0, 1.0))
+        
+        with tab5:
+            st.subheader("💖 Donors Who Supported Your Funds")
+            my_fund_donors = [f for f in st.session_state.db.get("fund_transactions", []) if f.get("ngo") == st.session_state.current_user]
+            
+            if not my_fund_donors:
+                st.info("No fund donations received yet.")
+            else:
+                for f in reversed(my_fund_donors):
+                    donor_mob = "N/A"
+                    for u in st.session_state.db["users"]:
+                        if u["username"].lower() == f.get("donor", "").lower():
+                            donor_mob = u.get("mobile", "N/A")
+                            break
+                            
+                    with st.container(border=True):
+                        st.write(f"💖 **{f.get('donor', 'Unknown')}** donated **₹{f.get('amount', 0)}**")
+                        st.write(f"📞 **Donor Mobile:** {donor_mob}")
+                        st.write(f"📌 **For Request:** {f.get('reason', 'N/A')}")
+                        st.write(f"📅 **Time:** {f.get('time', 'Unknown')}")
 
     # --- ADMIN DASHBOARD ---
     elif st.session_state.current_role == "Admin Portal":
         st.title("⚙️ Admin Panel")
         st.write("Complete System Overview")
         
-        st.subheader("Users")
+        st.subheader("Registered Users")
         st.dataframe(st.session_state.db["users"], use_container_width=True)
         st.subheader("Food Donations")
         st.dataframe(st.session_state.db["donations"], use_container_width=True)
         st.subheader("Fund Requests")
         st.dataframe(st.session_state.db["fund_requests"], use_container_width=True)
-                    
+        st.subheader("Fund Transactions Log")
+        if st.session_state.db.get("fund_transactions"):
+            st.dataframe(st.session_state.db["fund_transactions"], use_container_width=True)
+        else:
+            st.info("No fund transactions yet.")
+            
+        st.divider()
+        st.subheader("⚠️ Danger Zone")
+        st.write("Clicking this will delete all data and reset the app.")
+        if st.button("🗑️ Clear Entire Database (Reset All)", type="primary"):
+            st.session_state.db = {
+                "users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}],
+                "donations": [],
+                "fund_requests": [],
+                "fund_transactions": []
+            }
+            save_data(st.session_state.db)
+            st.success("Database completely wiped! Fresh start ready. Please log out and log back in.")
+        
