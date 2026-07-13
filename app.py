@@ -100,19 +100,18 @@ else:
                 
                 food_category = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
                 
-                col_a, col_b = st.columns(2)
                 v_boxes = v_serves = nv_boxes = nv_serves = 0
                 
-                with col_a:
-                    if food_category in ["Veg", "Both (Veg & Non-Veg)"]:
-                        st.markdown("🟢 **Veg Details**")
-                        v_boxes = st.number_input("Veg - No. of Boxes", min_value=0, step=1)
-                        v_serves = st.number_input("Veg - Serves (Persons)", min_value=0, step=1)
-                with col_b:
-                    if food_category in ["Non-Veg", "Both (Veg & Non-Veg)"]:
-                        st.markdown("🔴 **Non-Veg Details**")
-                        nv_boxes = st.number_input("Non-Veg - No. of Boxes", min_value=0, step=1)
-                        nv_serves = st.number_input("Non-Veg - Serves (Persons)", min_value=0, step=1)
+                # Tablet layout fix: Removed columns, placed them vertically
+                if food_category in ["Veg", "Both (Veg & Non-Veg)"]:
+                    st.markdown("🟢 **Veg Details**")
+                    v_boxes = st.number_input("Veg - No. of Boxes", min_value=0, step=1)
+                    v_serves = st.number_input("Veg - Serves (Persons)", min_value=0, step=1)
+                
+                if food_category in ["Non-Veg", "Both (Veg & Non-Veg)"]:
+                    st.markdown("🔴 **Non-Veg Details**")
+                    nv_boxes = st.number_input("Non-Veg - No. of Boxes", min_value=0, step=1)
+                    nv_serves = st.number_input("Non-Veg - Serves (Persons)", min_value=0, step=1)
                 
                 location = st.text_input("Pickup Address *")
                 
@@ -150,14 +149,18 @@ else:
                         remaining = req['goal'] - req['raised']
                         st.write(f"*Only ₹{remaining} left to reach the goal!*")
                         
-                        amt = st.number_input("Donate (₹)", min_value=100, max_value=remaining, step=100, key=f"amt_{req['id']}")
-                        if st.button(f"Donate ₹{amt}", key=f"btn_{req['id']}"):
-                            req['raised'] += amt
-                            if req['raised'] >= req['goal']:
-                                req['status'] = "Completed"
-                            save_data(st.session_state.db)
-                            st.success(f"💖 Thank you for your donation of ₹{amt}!")
-                            st.rerun()
+                        # Max value error fix
+                        if remaining > 0:
+                            min_donate = min(100, remaining)
+                            amt = st.number_input("Donate (₹)", min_value=min_donate, max_value=remaining, step=min_donate, key=f"amt_{req['id']}")
+                            if st.button(f"Donate ₹{amt}", key=f"btn_{req['id']}"):
+                                req['raised'] += amt
+                                if req['raised'] >= req['goal']:
+                                    req['status'] = "Completed"
+                                save_data(st.session_state.db)
+                                st.success(f"💖 Thank you for your donation of ₹{amt}!")
+                                st.rerun()
+                
                 elif req["status"] == "Completed":
                     with st.expander(f"✅ FULFILLED: {req['ngo']} - {req['reason']}", expanded=False):
                         st.success(f"Goal of ₹{req['goal']} was successfully raised! Thank you.")
@@ -172,11 +175,16 @@ else:
                 for d in reversed(my_donations):
                     with st.container(border=True):
                         st.write(f"📅 **{d.get('time', 'Unknown Time')}** | Status: **{d['status']}**")
-                        st.write(f"**Items:** {d['items']}")
-                        if d['veg_serves'] > 0:
-                            st.write(f"🟢 Veg: {d['veg_boxes']} Boxes (Serves {d['veg_serves']})")
-                        if d['nv_serves'] > 0:
-                            st.write(f"🔴 Non-Veg: {d['nv_boxes']} Boxes (Serves {d['nv_serves']})")
+                        # KeyError fix using .get()
+                        st.write(f"**Items:** {d.get('items', 'Not specified (Legacy Data)')}")
+                        
+                        v_serves = d.get('veg_serves', 0)
+                        if v_serves > 0:
+                            st.write(f"🟢 Veg: {d.get('veg_boxes', 0)} Boxes (Serves {v_serves})")
+                        
+                        nv_serves = d.get('nv_serves', 0)
+                        if nv_serves > 0:
+                            st.write(f"🔴 Non-Veg: {d.get('nv_boxes', 0)} Boxes (Serves {nv_serves})")
 
     # --- NGO DASHBOARD ---
     elif st.session_state.current_role == "NGO / Orphanage":
@@ -193,8 +201,10 @@ else:
                     with st.container(border=True):
                         st.write(f"🚨 **From:** {d['donor']} | 📞 **Contact:** {d.get('contact', 'N/A')}")
                         st.write(f"📍 **Address:** {d['location']}")
-                        st.write(f"🍲 **Items:** {d['items']}")
-                        st.write(f"**Category:** {d['category']} | Veg Serves: {d['veg_serves']} | Non-Veg Serves: {d['nv_serves']}")
+                        # KeyError fix using .get()
+                        st.write(f"🍲 **Items:** {d.get('items', 'Not specified (Legacy Data)')}")
+                        st.write(f"**Category:** {d.get('category', 'N/A')} | Veg Serves: {d.get('veg_serves', 0)} | Non-Veg Serves: {d.get('nv_serves', 0)}")
+                        
                         if st.button(f"Accept Pickup #{d['id']}", key=f"acc_{d['id']}", use_container_width=True):
                             d['status'] = f"Accepted by {st.session_state.current_user}"
                             save_data(st.session_state.db)
@@ -205,7 +215,7 @@ else:
             st.subheader("Post Emergency Need")
             with st.form("fund_form"):
                 reason = st.text_input("Reason (e.g. Groceries)")
-                goal = st.number_input("Target Amount (₹)", 500)
+                goal = st.number_input("Target Amount (₹)", min_value=500, step=500)
                 upi = st.text_input("Your UPI ID")
                 qr = st.text_input("QR Code Image URL (Optional)")
                 if st.form_submit_button("Post Request"):
@@ -240,4 +250,4 @@ else:
         st.dataframe(st.session_state.db["donations"], use_container_width=True)
         st.subheader("Fund Requests")
         st.dataframe(st.session_state.db["fund_requests"], use_container_width=True)
-            
+                        
