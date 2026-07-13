@@ -77,48 +77,131 @@ if not st.session_state.logged_in:
                 new_pass = st.text_input("Create Password", type="password")
                 new_role = st.selectbox("I am a:", ["Donor (Individual/Hotel)", "NGO / Orphanage"])
                 if st.button("Create Account", type="primary", use_container_width=True):
-                    st.session_state.db["users"].append({"username": new_user, "password": new_pass, "role": new_role})
-                    save_data(st.session_state.db)
-                    st.success("✅ Account created!")
+                    if any(u["username"] == new_user for u in st.session_state.db["users"]):
+                        st.error("Username already exists!")
+                    elif new_user and new_pass:
+                        st.session_state.db["users"].append({"username": new_user, "password": new_pass, "role": new_role})
+                        save_data(st.session_state.db)
+                        st.success("✅ Account created! You can now Login.")
+                    else:
+                        st.error("Please fill all fields.")
 
 else:
     # --- DONOR DASHBOARD ---
     if st.session_state.current_role == "Donor (Individual/Hotel)":
         st.title(f"👋 Welcome, {st.session_state.current_user}!")
-        tab1, tab2 = st.tabs(["🍽️ Donate Food", "💰 Support NGOs"])
+        tab1, tab2, tab3 = st.tabs(["🍽️ Donate Food", "💰 Support NGOs", "📜 My History"])
         
         with tab1:
             st.subheader("Submit Surplus Food")
             with st.form("donation_form"):
-                location = st.text_input("Pickup Address")
-                if st.form_submit_button("Submit"):
-                    st.session_state.db["donations"].append({"donor": st.session_state.current_user, "location": location, "status": "Available"})
-                    save_data(st.session_state.db)
-                    st.success("✅ Posted!")
+                contact = st.text_input("Contact Number (Mandatory) *")
+                food_items = st.text_area("What food items are you donating? (e.g., Rice, Dal, Chicken Curry) *")
+                
+                food_category = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
+                
+                col_a, col_b = st.columns(2)
+                v_boxes = v_serves = nv_boxes = nv_serves = 0
+                
+                with col_a:
+                    if food_category in ["Veg", "Both (Veg & Non-Veg)"]:
+                        st.markdown("🟢 **Veg Details**")
+                        v_boxes = st.number_input("Veg - No. of Boxes", min_value=0, step=1)
+                        v_serves = st.number_input("Veg - Serves (Persons)", min_value=0, step=1)
+                with col_b:
+                    if food_category in ["Non-Veg", "Both (Veg & Non-Veg)"]:
+                        st.markdown("🔴 **Non-Veg Details**")
+                        nv_boxes = st.number_input("Non-Veg - No. of Boxes", min_value=0, step=1)
+                        nv_serves = st.number_input("Non-Veg - Serves (Persons)", min_value=0, step=1)
+                
+                location = st.text_input("Pickup Address *")
+                
+                if st.form_submit_button("Submit Food Details"):
+                    if not contact or not location or not food_items:
+                        st.error("⚠️ Please fill Contact Number, Food Items, and Location!")
+                    else:
+                        st.session_state.db["donations"].append({
+                            "id": len(st.session_state.db["donations"]) + 1,
+                            "donor": st.session_state.current_user,
+                            "contact": contact,
+                            "items": food_items,
+                            "category": food_category,
+                            "veg_boxes": v_boxes, "veg_serves": v_serves,
+                            "nv_boxes": nv_boxes, "nv_serves": nv_serves,
+                            "location": location,
+                            "time": datetime.datetime.now().strftime("%I:%M %p"),
+                            "status": "Available"
+                        })
+                        save_data(st.session_state.db)
+                        st.success("✅ Food Details Posted Successfully!")
         
         with tab2:
-            st.subheader("Emergency NGO Requests")
-            for req in [r for r in st.session_state.db["fund_requests"] if r["status"] == "Active"]:
-                with st.expander(f"🏢 {req['ngo']} - Need: {req['reason']}", expanded=True):
-                    st.write(f"Goal: ₹{req['goal']} | Raised: ₹{req['raised']}")
-                    # PAYMENT SECTION FOR DONOR
-                    st.info(f"**Payment Details:** UPI ID: `{req['upi']}`")
-                    if req.get("qr_url"):
-                        st.image(req['qr_url'], width=150, caption="Scan to Pay")
-                    
-                    amt = st.number_input("Donate (₹)", min_value=100, step=100, key=f"amt_{req['id']}")
-                    if st.button(f"Donate ₹{amt}", key=f"btn_{req['id']}"):
-                        req['raised'] += amt
-                        save_data(st.session_state.db)
-                        st.success("💖 Thank you!")
-                        st.rerun()
+            st.subheader("NGO Fund Requests")
+            for req in st.session_state.db["fund_requests"]:
+                if req["status"] == "Active":
+                    with st.expander(f"🏢 {req['ngo']} - Need: {req['reason']}", expanded=True):
+                        st.write(f"**Goal:** ₹{req['goal']} | **Raised:** ₹{req['raised']}")
+                        st.progress(min(req['raised'] / req['goal'], 1.0))
+                        
+                        st.info(f"**Payment Details:** UPI ID: `{req['upi']}`")
+                        if req.get("qr_url"):
+                            st.image(req['qr_url'], width=150, caption="Scan to Pay")
+                        
+                        remaining = req['goal'] - req['raised']
+                        st.write(f"*Only ₹{remaining} left to reach the goal!*")
+                        
+                        amt = st.number_input("Donate (₹)", min_value=100, max_value=remaining, step=100, key=f"amt_{req['id']}")
+                        if st.button(f"Donate ₹{amt}", key=f"btn_{req['id']}"):
+                            req['raised'] += amt
+                            if req['raised'] >= req['goal']:
+                                req['status'] = "Completed"
+                            save_data(st.session_state.db)
+                            st.success(f"💖 Thank you for your donation of ₹{amt}!")
+                            st.rerun()
+                elif req["status"] == "Completed":
+                    with st.expander(f"✅ FULFILLED: {req['ngo']} - {req['reason']}", expanded=False):
+                        st.success(f"Goal of ₹{req['goal']} was successfully raised! Thank you.")
+        
+        with tab3:
+            st.subheader("My Past Food Donations")
+            my_donations = [d for d in st.session_state.db["donations"] if d["donor"] == st.session_state.current_user]
+            
+            if not my_donations:
+                st.info("You haven't made any food donations yet.")
+            else:
+                for d in reversed(my_donations):
+                    with st.container(border=True):
+                        st.write(f"📅 **{d.get('time', 'Unknown Time')}** | Status: **{d['status']}**")
+                        st.write(f"**Items:** {d['items']}")
+                        if d['veg_serves'] > 0:
+                            st.write(f"🟢 Veg: {d['veg_boxes']} Boxes (Serves {d['veg_serves']})")
+                        if d['nv_serves'] > 0:
+                            st.write(f"🔴 Non-Veg: {d['nv_boxes']} Boxes (Serves {d['nv_serves']})")
 
     # --- NGO DASHBOARD ---
     elif st.session_state.current_role == "NGO / Orphanage":
         st.title(f"🏢 {st.session_state.current_user}")
-        tab1, tab2 = st.tabs(["📢 Request Funds", "📂 My Requests"])
+        tab1, tab2, tab3 = st.tabs(["🔔 Available Food", "📢 Request Funds", "📂 My Requests"])
         
         with tab1:
+            st.subheader("Live Food Alerts")
+            available = [d for d in st.session_state.db["donations"] if d["status"] == "Available"]
+            if not available:
+                st.info("No active food donations right now.")
+            else:
+                for d in available:
+                    with st.container(border=True):
+                        st.write(f"🚨 **From:** {d['donor']} | 📞 **Contact:** {d.get('contact', 'N/A')}")
+                        st.write(f"📍 **Address:** {d['location']}")
+                        st.write(f"🍲 **Items:** {d['items']}")
+                        st.write(f"**Category:** {d['category']} | Veg Serves: {d['veg_serves']} | Non-Veg Serves: {d['nv_serves']}")
+                        if st.button(f"Accept Pickup #{d['id']}", key=f"acc_{d['id']}", use_container_width=True):
+                            d['status'] = f"Accepted by {st.session_state.current_user}"
+                            save_data(st.session_state.db)
+                            st.success("🎉 Accepted! Please call the donor to arrange pickup.")
+                            st.rerun()
+
+        with tab2:
             st.subheader("Post Emergency Need")
             with st.form("fund_form"):
                 reason = st.text_input("Reason (e.g. Groceries)")
@@ -126,20 +209,35 @@ else:
                 upi = st.text_input("Your UPI ID")
                 qr = st.text_input("QR Code Image URL (Optional)")
                 if st.form_submit_button("Post Request"):
-                    st.session_state.db["fund_requests"].append({
-                        "id": len(st.session_state.db["fund_requests"]) + 1,
-                        "ngo": st.session_state.current_user, "reason": reason, 
-                        "goal": goal, "raised": 0, "status": "Active", 
-                        "upi": upi, "qr_url": qr
-                    })
-                    save_data(st.session_state.db)
-                    st.success("✅ Posted!")
+                    if reason and upi:
+                        st.session_state.db["fund_requests"].append({
+                            "id": len(st.session_state.db["fund_requests"]) + 1,
+                            "ngo": st.session_state.current_user, "reason": reason, 
+                            "goal": goal, "raised": 0, "status": "Active", 
+                            "upi": upi, "qr_url": qr
+                        })
+                        save_data(st.session_state.db)
+                        st.success("✅ Posted!")
+                    else:
+                        st.error("Please provide Reason and UPI ID.")
 
-        with tab2:
-            for req in [r for r in st.session_state.db["fund_requests"] if r["ngo"] == st.session_state.current_user]:
-                st.write(f"**Reason:** {req['reason']} | Raised: ₹{req['raised']}/{req['goal']}")
+        with tab3:
+            st.subheader("My Active & Completed Requests")
+            for req in reversed([r for r in st.session_state.db["fund_requests"] if r["ngo"] == st.session_state.current_user]):
+                with st.container(border=True):
+                    st.write(f"**Reason:** {req['reason']}")
+                    st.write(f"Status: **{req['status']}** | Raised: ₹{req['raised']}/{req['goal']}")
+                    st.progress(min(req['raised'] / req['goal'], 1.0))
 
+    # --- ADMIN DASHBOARD ---
     elif st.session_state.current_role == "Admin Portal":
         st.title("⚙️ Admin Panel")
+        st.write("Complete System Overview")
+        
+        st.subheader("Users")
+        st.dataframe(st.session_state.db["users"], use_container_width=True)
+        st.subheader("Food Donations")
+        st.dataframe(st.session_state.db["donations"], use_container_width=True)
+        st.subheader("Fund Requests")
         st.dataframe(st.session_state.db["fund_requests"], use_container_width=True)
-    
+            
