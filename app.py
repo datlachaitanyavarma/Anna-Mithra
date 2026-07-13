@@ -94,15 +94,17 @@ else:
         
         with tab1:
             st.subheader("Submit Surplus Food")
+            
+            # MOVED OUTSIDE THE FORM TO UPDATE LIVE
+            st.info("👇 Select Food Category first, then fill the details in the box.")
+            food_category = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
+            
             with st.form("donation_form"):
                 contact = st.text_input("Contact Number (Mandatory) *")
                 food_items = st.text_area("What food items are you donating? (e.g., Rice, Dal, Chicken Curry) *")
                 
-                food_category = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
-                
                 v_boxes = v_serves = nv_boxes = nv_serves = 0
                 
-                # Tablet layout fix: Removed columns, placed them vertically
                 if food_category in ["Veg", "Both (Veg & Non-Veg)"]:
                     st.markdown("🟢 **Veg Details**")
                     v_boxes = st.number_input("Veg - No. of Boxes", min_value=0, step=1)
@@ -137,45 +139,45 @@ else:
         with tab2:
             st.subheader("NGO Fund Requests")
             for req in st.session_state.db["fund_requests"]:
-                if req["status"] == "Active":
-                    with st.expander(f"🏢 {req['ngo']} - Need: {req['reason']}", expanded=True):
-                        st.write(f"**Goal:** ₹{req['goal']} | **Raised:** ₹{req['raised']}")
-                        st.progress(min(req['raised'] / req['goal'], 1.0))
+                if req.get("status") == "Active":
+                    with st.expander(f"🏢 {req.get('ngo', 'NGO')} - Need: {req.get('reason', 'Help')}", expanded=True):
+                        st.write(f"**Goal:** ₹{req.get('goal', 0)} | **Raised:** ₹{req.get('raised', 0)}")
                         
-                        st.info(f"**Payment Details:** UPI ID: `{req['upi']}`")
+                        goal = req.get('goal', 1)
+                        raised = req.get('raised', 0)
+                        st.progress(min(raised / goal if goal > 0 else 0, 1.0))
+                        
+                        st.info(f"**Payment Details:** UPI ID: `{req.get('upi', 'N/A')}`")
                         if req.get("qr_url"):
-                            st.image(req['qr_url'], width=150, caption="Scan to Pay")
+                            st.image(req.get("qr_url"), width=150, caption="Scan to Pay")
                         
-                        remaining = req['goal'] - req['raised']
-                        st.write(f"*Only ₹{remaining} left to reach the goal!*")
-                        
-                        # Max value error fix
+                        remaining = goal - raised
                         if remaining > 0:
+                            st.write(f"*Only ₹{remaining} left to reach the goal!*")
                             min_donate = min(100, remaining)
-                            amt = st.number_input("Donate (₹)", min_value=min_donate, max_value=remaining, step=min_donate, key=f"amt_{req['id']}")
-                            if st.button(f"Donate ₹{amt}", key=f"btn_{req['id']}"):
-                                req['raised'] += amt
-                                if req['raised'] >= req['goal']:
+                            amt = st.number_input("Donate (₹)", min_value=min_donate, max_value=remaining, step=min_donate, key=f"amt_{req.get('id', 0)}")
+                            if st.button(f"Donate ₹{amt}", key=f"btn_{req.get('id', 0)}"):
+                                req['raised'] = raised + amt
+                                if req['raised'] >= goal:
                                     req['status'] = "Completed"
                                 save_data(st.session_state.db)
                                 st.success(f"💖 Thank you for your donation of ₹{amt}!")
                                 st.rerun()
                 
-                elif req["status"] == "Completed":
-                    with st.expander(f"✅ FULFILLED: {req['ngo']} - {req['reason']}", expanded=False):
-                        st.success(f"Goal of ₹{req['goal']} was successfully raised! Thank you.")
+                elif req.get("status") == "Completed":
+                    with st.expander(f"✅ FULFILLED: {req.get('ngo', 'NGO')} - {req.get('reason', 'Need')}", expanded=False):
+                        st.success(f"Goal of ₹{req.get('goal', 0)} was successfully raised! Thank you.")
         
         with tab3:
             st.subheader("My Past Food Donations")
-            my_donations = [d for d in st.session_state.db["donations"] if d["donor"] == st.session_state.current_user]
+            my_donations = [d for d in st.session_state.db["donations"] if d.get("donor") == st.session_state.current_user]
             
             if not my_donations:
                 st.info("You haven't made any food donations yet.")
             else:
                 for d in reversed(my_donations):
                     with st.container(border=True):
-                        st.write(f"📅 **{d.get('time', 'Unknown Time')}** | Status: **{d['status']}**")
-                        # KeyError fix using .get()
+                        st.write(f"📅 **{d.get('time', 'Unknown Time')}** | Status: **{d.get('status', 'Unknown')}**")
                         st.write(f"**Items:** {d.get('items', 'Not specified (Legacy Data)')}")
                         
                         v_serves = d.get('veg_serves', 0)
@@ -193,19 +195,20 @@ else:
         
         with tab1:
             st.subheader("Live Food Alerts")
-            available = [d for d in st.session_state.db["donations"] if d["status"] == "Available"]
+            available = [d for d in st.session_state.db["donations"] if d.get("status") == "Available"]
             if not available:
                 st.info("No active food donations right now.")
             else:
-                for d in available:
+                for idx, d in enumerate(available):
                     with st.container(border=True):
-                        st.write(f"🚨 **From:** {d['donor']} | 📞 **Contact:** {d.get('contact', 'N/A')}")
-                        st.write(f"📍 **Address:** {d['location']}")
-                        # KeyError fix using .get()
+                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | 📞 **Contact:** {d.get('contact', 'N/A')}")
+                        st.write(f"📍 **Address:** {d.get('location', 'N/A')}")
                         st.write(f"🍲 **Items:** {d.get('items', 'Not specified (Legacy Data)')}")
                         st.write(f"**Category:** {d.get('category', 'N/A')} | Veg Serves: {d.get('veg_serves', 0)} | Non-Veg Serves: {d.get('nv_serves', 0)}")
                         
-                        if st.button(f"Accept Pickup #{d['id']}", key=f"acc_{d['id']}", use_container_width=True):
+                        safe_id = d.get('id', f"legacy_{idx}")
+                        
+                        if st.button(f"Accept Pickup", key=f"acc_{safe_id}", use_container_width=True):
                             d['status'] = f"Accepted by {st.session_state.current_user}"
                             save_data(st.session_state.db)
                             st.success("🎉 Accepted! Please call the donor to arrange pickup.")
@@ -233,11 +236,15 @@ else:
 
         with tab3:
             st.subheader("My Active & Completed Requests")
-            for req in reversed([r for r in st.session_state.db["fund_requests"] if r["ngo"] == st.session_state.current_user]):
+            my_reqs = [r for r in st.session_state.db["fund_requests"] if r.get("ngo") == st.session_state.current_user]
+            for req in reversed(my_reqs):
                 with st.container(border=True):
-                    st.write(f"**Reason:** {req['reason']}")
-                    st.write(f"Status: **{req['status']}** | Raised: ₹{req['raised']}/{req['goal']}")
-                    st.progress(min(req['raised'] / req['goal'], 1.0))
+                    st.write(f"**Reason:** {req.get('reason', 'N/A')}")
+                    st.write(f"Status: **{req.get('status', 'Unknown')}** | Raised: ₹{req.get('raised', 0)}/₹{req.get('goal', 0)}")
+                    
+                    goal = req.get('goal', 1)
+                    raised = req.get('raised', 0)
+                    st.progress(min(raised / goal if goal > 0 else 0, 1.0))
 
     # --- ADMIN DASHBOARD ---
     elif st.session_state.current_role == "Admin Portal":
