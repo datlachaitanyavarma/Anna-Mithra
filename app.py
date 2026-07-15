@@ -1,10 +1,13 @@
 import streamlit as st
+import datetime
+import os
+import json
 import smtplib
 from email.message import EmailMessage
 
-# --- Email Configuration ---
+# --- EMAIL CONFIGURATION ---
 EMAIL_USER = "AnnaMithra.alert@gmail.com"
-EMAIL_PASS = "uoqisnadymhiyiqy" # App Password
+EMAIL_PASS = "uoqisnadymhiyiqy"
 
 def send_email(to_email, subject, body):
     msg = EmailMessage()
@@ -17,55 +20,81 @@ def send_email(to_email, subject, body):
             smtp.login(EMAIL_USER, EMAIL_PASS)
             smtp.send_message(msg)
         return True
-    except Exception as e:
-        st.error(f"Error: {e}")
+    except:
         return False
 
-# --- Main App Interface ---
-st.title("AnnaMithra: Food Donation Portal")
+# --- SETUP ---
+st.set_page_config(page_title="Annamithra - Food & Fund Platform", page_icon="🤝", layout="wide")
+DB_FILE = "database.json"
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-menu = ["NGO Registration", "Donate Food"]
-choice = st.sidebar.selectbox("Menu", menu)
+def load_data():
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    return {"users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}], "donations": [], "fund_requests": [], "fund_transactions": []}
 
-if choice == "NGO Registration":
-    st.subheader("NGO Registration")
-    with st.form("ngo_registration_form"):
-        ngo_name = st.text_input("NGO Name")
-        mobile = st.text_input("Mobile Number (Mandatory)")
-        email = st.text_input("Email ID (Mandatory)")
-        register_btn = st.form_submit_button("Register")
+def save_data(data):
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+if 'db' not in st.session_state: st.session_state.db = load_data()
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+
+# --- SIDEBAR ---
+with st.sidebar:
+    if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
+    if st.session_state.logged_in:
+        st.success(f"👤 {st.session_state.current_user}")
+        if st.button("🚪 Logout"):
+            st.session_state.logged_in = False
+            st.rerun()
+
+# --- MAIN PAGE ---
+if not st.session_state.logged_in:
+    st.title("Welcome to Annamithra 🤝")
+    auth_tab1, auth_tab2 = st.tabs(["🔐 Login", "📝 Register"])
+    with auth_tab1:
+        log_user = st.text_input("Username")
+        log_pass = st.text_input("Password", type="password")
+        if st.button("Login"):
+            for u in st.session_state.db["users"]:
+                if u["username"].lower() == log_user.lower() and u["password"] == log_pass:
+                    st.session_state.logged_in = True
+                    st.session_state.current_user = u["username"]
+                    st.session_state.current_role = u["role"]
+                    st.rerun()
+    with auth_tab2:
+        new_user = st.text_input("Username")
+        new_pass = st.text_input("Password", type="password")
+        new_mobile = st.text_input("Mobile")
+        new_email = st.text_input("Email")
+        new_role = st.selectbox("Role", ["Donor (Individual/Hotel)", "NGO / Orphanage"])
+        if st.button("Register"):
+            st.session_state.db["users"].append({"username": new_user, "password": new_pass, "role": new_role, "mobile": new_mobile, "email": new_email})
+            save_data(st.session_state.db)
+            st.success("Registered!")
+else:
+    # DASHBOARD LOGIC
+    if st.session_state.current_role == "Donor (Individual/Hotel)":
+        with st.form("donation_form"):
+            donor_email = st.text_input("Your Email (For Confirmation)")
+            food_items = st.text_area("Food Items")
+            location = st.text_input("Location")
+            ngo_email = st.text_input("NGO Email (For Alert)")
+            if st.form_submit_button("Submit"):
+                st.session_state.db["donations"].append({"donor": st.session_state.current_user, "items": food_items, "status": "Available"})
+                save_data(st.session_state.db)
+                send_email(ngo_email, "🚨 New Food Alert", f"Food from {st.session_state.current_user}: {food_items}")
+                send_email(donor_email, "🙏 Thank You!", "Donation received!")
+                st.success("✅ Success!")
     
-    if register_btn:
-        if not mobile or not email:
-            st.warning("⚠️ Both Mobile Number and Email ID are mandatory!")
-        else:
-            st.success(f"✅ Registration Successful for {ngo_name}!")
-
-elif choice == "Donate Food":
-    st.subheader("Food Donation Form")
-    with st.form("food_donation_form"):
-        donor_name = st.text_input("Your Name")
-        donor_email = st.text_input("Your Email (Mandatory)")
-        food_item = st.text_input("Food Item Name")
-        quantity = st.text_input("Quantity (e.g., 5kg)")
-        ngo_email = st.text_input("NGO Contact Email (Mandatory)")
-        submit = st.form_submit_button("Submit & Notify")
-
-    if submit:
-        if not donor_email or not ngo_email or not food_item or not quantity:
-            st.warning("⚠️ All fields are mandatory!")
-        else:
-            with st.spinner("Processing your donation..."):
-                # 1. Alert to NGO
-                msg_ngo = f"Hello NGO,\n\nNew donation received from {donor_name}.\n\nDetails:\nItem: {food_item}\nQuantity: {quantity}\n\nPlease check the dashboard to coordinate the pickup."
-                ngo_sent = send_email(ngo_email, "🚨 New Donation Alert!", msg_ngo)
-                
-                # 2. Thank you mail to Donor
-                msg_donor = f"Dear {donor_name},\n\nThank you for your generous donation of {food_item} ({quantity}).\nYour contribution will significantly help those in need.\n\nRegards,\nTeam AnnaMithra"
-                donor_sent = send_email(donor_email, "🙏 Thank You for your Donation!", msg_donor)
-                
-                if ngo_sent and donor_sent:
-                    st.success("✅ Donation submitted successfully! Emails sent to both NGO and Donor.")
-                else:
-                    st.error("❌ Email process failed. Please check the email addresses.")
-                    
+    elif st.session_state.current_role == "NGO / Orphanage":
+        st.subheader("Available Food")
+        for d in st.session_state.db["donations"]:
+            st.write(f"{d['items']} - {d['status']}")
+            
+    elif st.session_state.current_role == "Admin Portal":
+        st.subheader("Admin Panel")
+        st.write(st.session_state.db)
+            
