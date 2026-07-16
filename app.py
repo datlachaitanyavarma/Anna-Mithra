@@ -12,7 +12,8 @@ DB_FILE = "database.json"
 
 # --- EMAIL CONFIGURATION ---
 EMAIL_USER = "AnnaMithra.alert@gmail.com"
-EMAIL_PASS = "uoqisnadymhiyiqy" # Mee App Password
+# Updated New App Password (Spaces removed for correct login)
+EMAIL_PASS = "dqfnqinpxrzvufrh" 
 
 def send_email(to_email, subject, body):
     msg = EmailMessage()
@@ -21,7 +22,7 @@ def send_email(to_email, subject, body):
     msg['To'] = to_email
     msg.set_content(body)
     try:
-        # UPDATED: TLS Protocol (Port 587)
+        # TLS Protocol (Port 587) - Secure for Streamlit
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
