@@ -12,7 +12,7 @@ DB_FILE = "database.json"
 
 # --- EMAIL CONFIGURATION ---
 EMAIL_USER = "AnnaMithra.alert@gmail.com"
-EMAIL_PASS = "dqfnqinpxrzvufrh" # Nee kotha App Password
+EMAIL_PASS = "dqfnqinpxrzvufrh" 
 
 def send_email(to_email, subject, body):
     msg = EmailMessage()
@@ -34,31 +34,35 @@ def send_email(to_email, subject, body):
 # --- INDIAN STANDARD TIME (IST) SETUP ---
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-# --- 2. DATABASE SYSTEM ---
+# --- 2. DATABASE SYSTEM (OPTIMIZED FOR SPEED & REAL-TIME) ---
 def load_data():
+    default_data = {
+        "users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}],
+        "donations": [],
+        "fund_requests": [],
+        "fund_transactions": []
+    }
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f:
-            data = json.load(f)
-            if "users" not in data:
-                data["users"] = [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}]
-            if "fund_transactions" not in data:
-                data["fund_transactions"] = [] 
-            return data
-    else:
-        return {
-            "users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}],
-            "donations": [],
-            "fund_requests": [],
-            "fund_transactions": []
-        }
+        try:
+            with open(DB_FILE, "r") as f:
+                data = json.load(f)
+                # Check for missing keys and fix them instantly
+                for key in default_data:
+                    if key not in data:
+                        data[key] = default_data[key]
+                return data
+        except json.JSONDecodeError:
+            return default_data
+    return default_data
 
 def save_data(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-if 'db' not in st.session_state:
-    st.session_state.db = load_data()
+# 🔥 FIX: Load fresh data on EVERY interaction to ensure Real-Time sync between NGO and Donor
+st.session_state.db = load_data()
 
+# Login State Initialization
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.current_user = ""
@@ -71,11 +75,19 @@ with st.sidebar:
     else:
         st.markdown("<h2 style='text-align: center; color: #FF8C00;'>📦🤝🍲 Annamithra</h2>", unsafe_allow_html=True)
     st.divider()
+    
     if st.session_state.logged_in:
         st.success(f"👤 **{st.session_state.current_user}**")
         st.info(f"Role: {st.session_state.current_role}")
+        
+        # 🔥 FIX: Custom Refresh Button (Does NOT log out the user)
+        if st.button("🔄 Refresh Data", use_container_width=True):
+            st.rerun()
+            
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.logged_in = False
+            st.session_state.current_user = ""
+            st.session_state.current_role = ""
             st.rerun()
     else:
         st.write("🔒 Please login.")
@@ -94,12 +106,15 @@ if not st.session_state.logged_in:
                 log_user = st.text_input("Username", key="login_user")
                 log_pass = st.text_input("Password", type="password", key="login_pass")
                 if st.button("Login", type="primary", use_container_width=True, key="login_btn"):
-                    for u in st.session_state.db["users"]:
-                        if u["username"].lower() == log_user.lower() and u["password"] == log_pass:
-                            st.session_state.logged_in = True
-                            st.session_state.current_user = u["username"]
-                            st.session_state.current_role = u["role"]
-                            st.rerun()
+                    # 🔥 FIX: Optimized fast checking loop
+                    matched_user = next((u for u in st.session_state.db["users"] if u["username"].lower() == log_user.lower() and u["password"] == log_pass), None)
+                    if matched_user:
+                        st.session_state.logged_in = True
+                        st.session_state.current_user = matched_user["username"]
+                        st.session_state.current_role = matched_user["role"]
+                        st.rerun()
+                    else:
+                        st.error("Invalid Username or Password!")
         
         with auth_tab2:
             with st.container(border=True):
@@ -192,7 +207,8 @@ else:
         
         with tab2:
             st.subheader("NGO Fund Requests")
-            for req in st.session_state.db["fund_requests"]:
+            # Using reverse so newest requests come first
+            for req in reversed(st.session_state.db["fund_requests"]):
                 if req.get("status") == "Active":
                     with st.expander(f"🏢 {req.get('ngo', 'NGO')} - Need: {req.get('reason', 'Help')}", expanded=True):
                         st.write(f"**Goal:** ₹{req.get('goal', 0)} | **Raised:** ₹{req.get('raised', 0)}")
@@ -216,8 +232,6 @@ else:
                                     req['status'] = "Completed"
                                     
                                 current_time = datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
-                                if "fund_transactions" not in st.session_state.db:
-                                    st.session_state.db["fund_transactions"] = []
                                 st.session_state.db["fund_transactions"].append({
                                     "donor": st.session_state.current_user,
                                     "ngo": req.get('ngo', 'NGO'),
@@ -282,12 +296,10 @@ else:
                             d['status'] = f"Accepted by {st.session_state.current_user}"
                             save_data(st.session_state.db)
                             
-                            # Fetch donor email securely
                             donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'].lower() == str(d.get('donor', '')).lower()), None)
                             
                             if donor_email:
                                 msg = f"Hello {d['donor']},\n\nGood news! Your food donation ({d['items']}) has been ACCEPTED by {st.session_state.current_user}.\n\nThey will coordinate with you via your contact number: {d['contact']} for the pickup.\n\nThank you,\nTeam Annamithra"
-                                # Removed emojis to prevent Spam
                                 send_email(donor_email, "Update: Your Food Donation is Accepted", msg)
                                 st.success(f"Accepted! Email alert sent successfully to {donor_email}.")
                             else:
@@ -316,12 +328,10 @@ else:
                             d['status'] = f"Received by {st.session_state.current_user}"
                             save_data(st.session_state.db)
                             
-                            # Fetch donor email securely
                             donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'].lower() == str(d.get('donor', '')).lower()), None)
                             
                             if donor_email:
                                 msg = f"Dear {d['donor']},\n\nThank you so much! The food you donated ({d['items']}) has SUCCESSFULLY REACHED the needy through {st.session_state.current_user}.\n\nYour kindness makes a huge difference in the community.\n\nWarm Regards,\nTeam Annamithra"
-                                # Removed emojis to prevent Spam
                                 send_email(donor_email, "Success: Food Reached the Needy", msg)
                                 st.success(f"✅ Marked as Received! Thank You email sent to {donor_email}.")
                             else:
@@ -345,7 +355,7 @@ else:
                             "upi": upi, "qr_url": qr
                         })
                         save_data(st.session_state.db)
-                        st.success("✅ Posted!")
+                        st.success("✅ Posted Successfully! Donors can now see this request.")
                     else:
                         st.error("Please provide Reason and UPI ID.")
 
@@ -409,4 +419,4 @@ else:
             }
             save_data(st.session_state.db)
             st.success("Database completely wiped! Fresh start ready. Please log out and log back in.")
-                            
+    
