@@ -21,12 +21,16 @@ def send_email(to_email, subject, body):
     msg['To'] = to_email
     msg.set_content(body)
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(EMAIL_USER, EMAIL_PASS)
-            smtp.send_message(msg)
+        # UPDATED: TLS Protocol (Port 587)
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.send_message(msg)
+        server.quit()
         return True
     except Exception as e:
-        print(f"Mail Error: {e}")
+        # Error vasthe screen meeda chupisthundi
+        st.error(f"⚠️ Email Error for {to_email}: {e}")
         return False
 
 # --- INDIAN STANDARD TIME (IST) SETUP ---
@@ -178,16 +182,17 @@ else:
                             
                             ngo_msg = f"Hello NGO,\n\nEmergency: Surplus Food is available for pickup!\n\nDonor: {st.session_state.current_user}\nItems: {food_items}\nCategory: {food_category}\nContact: {contact}\nLocation: {location}\n\nPlease log in to Annamithra to accept this pickup."
                             
+                            emails_sent_count = 0
                             for ngo_email in ngo_list:
-                                send_email(ngo_email, "🚨 Emergency: Surplus Food Available!", ngo_msg)
+                                if send_email(ngo_email, "🚨 Emergency: Surplus Food Available!", ngo_msg):
+                                    emails_sent_count += 1
                             
                             # Thank You to Donor
                             donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'] == st.session_state.current_user), None)
                             if donor_email:
-                                donor_msg = f"Dear {st.session_state.current_user},\n\nThank you for your generous food donation ({food_items}). Your contribution will help feed the needy.\n\nRegards,\nTeam Annamithra"
-                                send_email(donor_email, "🙏 Thank You for your Donation!", donor_msg)
+                                send_email(donor_email, "🙏 Thank You for your Donation!", f"Dear {st.session_state.current_user},\n\nThank you for your generous food donation ({food_items}). Your contribution will help feed the needy.\n\nRegards,\nTeam Annamithra")
                         
-                        st.success(f"✅ Posted Successfully! Notified {len(ngo_list)} Registered NGOs.")
+                        st.success(f"✅ Posted Successfully! Notified {emails_sent_count} Registered NGOs.")
         
         with tab2:
             st.subheader("NGO Fund Requests")
