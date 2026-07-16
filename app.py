@@ -137,7 +137,6 @@ else:
             
             with st.form("donation_form"):
                 contact = st.text_input("Contact Number (For this pickup) *")
-                ngo_email_input = st.text_input("NGO Contact Email (To send alert) *") 
                 food_items = st.text_area("What food items are you donating? (e.g., Rice, Dal, Chicken Curry) *")
                 
                 v_boxes = v_serves = nv_boxes = nv_serves = 0
@@ -155,8 +154,8 @@ else:
                 location = st.text_input("Pickup Address *")
                 
                 if st.form_submit_button("Submit Food Details"):
-                    if not contact or not location or not food_items or not ngo_email_input:
-                        st.error("⚠️ Please fill Contact Number, NGO Email, Food Items, and Location!")
+                    if not contact or not location or not food_items:
+                        st.error("⚠️ Please fill Contact Number, Food Items, and Location!")
                     else:
                         current_time = datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
                         st.session_state.db["donations"].append({
@@ -173,20 +172,22 @@ else:
                         })
                         save_data(st.session_state.db)
                         
-                        # --- EMAIL NOTIFICATION LOGIC ---
-                        with st.spinner("Processing Data and Sending Emails..."):
-                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'] == st.session_state.current_user), "")
+                        # --- AUTO EMAIL TO ALL REGISTERED NGOs ---
+                        with st.spinner("Processing Data and Notifying NGOs..."):
+                            ngo_list = [u['email'] for u in st.session_state.db["users"] if u.get('role') == "NGO / Orphanage" and u.get('email')]
                             
-                            # Alert to NGO
                             ngo_msg = f"Hello NGO,\n\nEmergency: Surplus Food is available for pickup!\n\nDonor: {st.session_state.current_user}\nItems: {food_items}\nCategory: {food_category}\nContact: {contact}\nLocation: {location}\n\nPlease log in to Annamithra to accept this pickup."
-                            send_email(ngo_email_input, "🚨 Emergency: Surplus Food Available!", ngo_msg)
+                            
+                            for ngo_email in ngo_list:
+                                send_email(ngo_email, "🚨 Emergency: Surplus Food Available!", ngo_msg)
                             
                             # Thank You to Donor
+                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'] == st.session_state.current_user), None)
                             if donor_email:
                                 donor_msg = f"Dear {st.session_state.current_user},\n\nThank you for your generous food donation ({food_items}). Your contribution will help feed the needy.\n\nRegards,\nTeam Annamithra"
                                 send_email(donor_email, "🙏 Thank You for your Donation!", donor_msg)
                         
-                        st.success("✅ Food Details Posted & Email Alerts Sent Successfully!")
+                        st.success(f"✅ Posted Successfully! Notified {len(ngo_list)} Registered NGOs.")
         
         with tab2:
             st.subheader("NGO Fund Requests")
@@ -389,4 +390,4 @@ else:
             }
             save_data(st.session_state.db)
             st.success("Database completely wiped! Fresh start ready. Please log out and log back in.")
-              
+            
