@@ -12,7 +12,7 @@ DB_FILE = "database.json"
 
 # --- EMAIL CONFIGURATION ---
 EMAIL_USER = "AnnaMithra.alert@gmail.com"
-EMAIL_PASS = "dqfnqinpxrzvufrh" 
+EMAIL_PASS = "dqfnqinpxrzvufrh" # Nee kotha App Password
 
 def send_email(to_email, subject, body):
     msg = EmailMessage()
@@ -186,7 +186,7 @@ else:
                             donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'] == st.session_state.current_user), None)
                             if donor_email:
                                 donor_msg = f"Dear {st.session_state.current_user},\n\nThank you for your generous food donation ({food_items}). Your contribution will help feed the needy. You will receive an email once an NGO accepts your pickup.\n\nRegards,\nTeam Annamithra"
-                                send_email(donor_email, "🙏 Thank You for your Donation!", donor_msg)
+                                send_email(donor_email, "Thank You for your Donation", donor_msg)
                         
                         st.success(f"✅ Posted Successfully! Notified {emails_sent_count} Registered NGOs.")
         
@@ -282,13 +282,17 @@ else:
                             d['status'] = f"Accepted by {st.session_state.current_user}"
                             save_data(st.session_state.db)
                             
-                            # Email to Donor: Food is Accepted
-                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'] == d['donor']), None)
+                            # Fetch donor email securely
+                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'].lower() == str(d.get('donor', '')).lower()), None)
+                            
                             if donor_email:
                                 msg = f"Hello {d['donor']},\n\nGood news! Your food donation ({d['items']}) has been ACCEPTED by {st.session_state.current_user}.\n\nThey will coordinate with you via your contact number: {d['contact']} for the pickup.\n\nThank you,\nTeam Annamithra"
-                                send_email(donor_email, "🎉 Your Food Donation is Accepted!", msg)
-                            
-                            st.success("🎉 Accepted! Check 'Accepted Pickups' tab. Donor has been notified via Email.")
+                                # Removed emojis to prevent Spam
+                                send_email(donor_email, "Update: Your Food Donation is Accepted", msg)
+                                st.success(f"Accepted! Email alert sent successfully to {donor_email}.")
+                            else:
+                                st.warning("Accepted! But couldn't fetch donor email to send alert.")
+                                
                             st.rerun()
 
         with tab2:
@@ -312,13 +316,17 @@ else:
                             d['status'] = f"Received by {st.session_state.current_user}"
                             save_data(st.session_state.db)
                             
-                            # Email to Donor: Food Reached Needy
-                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'] == d['donor']), None)
+                            # Fetch donor email securely
+                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'].lower() == str(d.get('donor', '')).lower()), None)
+                            
                             if donor_email:
                                 msg = f"Dear {d['donor']},\n\nThank you so much! The food you donated ({d['items']}) has SUCCESSFULLY REACHED the needy through {st.session_state.current_user}.\n\nYour kindness makes a huge difference in the community.\n\nWarm Regards,\nTeam Annamithra"
-                                send_email(donor_email, "❤️ Food Reached the Needy!", msg)
+                                # Removed emojis to prevent Spam
+                                send_email(donor_email, "Success: Food Reached the Needy", msg)
+                                st.success(f"✅ Marked as Received! Thank You email sent to {donor_email}.")
+                            else:
+                                st.warning("Received! But couldn't fetch donor email to send alert.")
                                 
-                            st.success("✅ Marked as Received! A Thank You email has been sent to the Donor.")
                             st.rerun()
 
         with tab3:
@@ -401,4 +409,4 @@ else:
             }
             save_data(st.session_state.db)
             st.success("Database completely wiped! Fresh start ready. Please log out and log back in.")
-            
+                            
