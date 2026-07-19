@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import urllib.parse
 import pandas as pd
+import streamlit.components.v1 as components
 from supabase import create_client, Client
 
 # ==========================================
@@ -60,6 +61,86 @@ def display_formatted_table(data, prefix="AM"):
     if 'password' in df.columns and prefix == "AM-USR":
         df['password'] = "••••••••"
     st.dataframe(df, hide_index=True, use_container_width=True)
+
+# --- LIVE LOCATION COMPONENT ---
+def render_location_widget():
+    components.html(
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+        .btn {
+            background-color: #FF4B4B; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-family: sans-serif; font-size: 14px;
+        }
+        .btn-copy {
+            background-color: #4CAF50; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-family: sans-serif; font-size: 14px; margin-left: 5px;
+        }
+        input {
+            width: 100%; padding: 10px; margin-top: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: sans-serif; color: #333;
+        }
+        </style>
+        </head>
+        <body style="margin:0; padding:15px; font-family:sans-serif; background-color:#f4f6f9; border-radius:8px; border:1px solid #e0e0e0;">
+        
+        <p style="margin-top:0; font-size:15px; color:#333; font-weight:bold;">📍 Get Your Live Location Link</p>
+        <button class="btn" onclick="getLocation()">1. Get My Current Location</button>
+        <input type="text" id="loc_link" placeholder="Your Google Maps link will appear here..." readonly>
+        <button class="btn-copy" onclick="copyLink()">2. 📋 Copy Link</button>
+
+        <script>
+        function getLocation() {
+            var inputField = document.getElementById("loc_link");
+            inputField.value = "Fetching location... Please wait and click 'Allow'.";
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(showPosition, showError);
+            } else {
+                inputField.value = "Geolocation is not supported by this browser.";
+            }
+        }
+
+        function showPosition(position) {
+            var lat = position.coords.latitude;
+            var lon = position.coords.longitude;
+            var gmaps_url = "https://www.google.com/maps?q=" + lat + "," + lon;
+            document.getElementById("loc_link").value = gmaps_url;
+        }
+
+        function showError(error) {
+            var inputField = document.getElementById("loc_link");
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    inputField.value = "Error: You denied the request for Geolocation.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    inputField.value = "Error: Location information is unavailable.";
+                    break;
+                case error.TIMEOUT:
+                    inputField.value = "Error: The request timed out.";
+                    break;
+                case error.UNKNOWN_ERROR:
+                    inputField.value = "An unknown error occurred.";
+                    break;
+            }
+        }
+
+        function copyLink() {
+            var copyText = document.getElementById("loc_link");
+            if (!copyText.value || copyText.value.includes("Fetching") || copyText.value.includes("Error")) {
+                alert("Please click 'Get My Current Location' first and wait for the link!");
+                return;
+            }
+            copyText.select();
+            copyText.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(copyText.value);
+            alert("✅ Link Copied! Now paste it in the box below.");
+        }
+        </script>
+        </body>
+        </html>
+        """,
+        height=180
+    )
 
 # ==========================================
 # 4. SIDEBAR & AUTHENTICATION
@@ -170,16 +251,13 @@ def donor_dashboard():
                 
             address = st.text_area("Pickup Address (Door No, Street Name) *")
             
-            # --- Google Maps Location Feature ---
-            st.markdown("##### 📍 Share Exact Location (Optional but helpful)")
-            st.info("Step 1: Click the link below to open Maps.\n\nStep 2: Copy your location link.\n\nStep 3: Paste it in the box below.")
-            st.markdown("👉 **[Open Google Maps to Copy Link](https://maps.google.com/)**")
-            gmaps_link = st.text_input("Paste Google Maps Link Here 🔗")
+            # --- Live Location Fetcher ---
+            render_location_widget()
+            gmaps_link = st.text_input("Paste the Copied Location Link Here 🔗 *")
             
             if st.button("Submit Food Details", type="primary"):
-                if contact and items and address:
-                    # Combine address and maps link for database storage
-                    final_location = f"{address} | MapsLink: {gmaps_link}" if gmaps_link else address
+                if contact and items and address and gmaps_link:
+                    final_location = f"{address} | MapsLink: {gmaps_link}"
                     
                     insert_data("donations", {
                         "donor": st.session_state.current_user, "contact": contact, "items": items,
@@ -189,7 +267,7 @@ def donor_dashboard():
                     })
                     st.success("Food Details Submitted Successfully!")
                 else:
-                    st.error("Please fill all mandatory (*) fields.")
+                    st.error("Please fill all mandatory (*) fields including the Map Link.")
 
     with tab2:
         st.subheader("NGO Fund Requests")
@@ -259,7 +337,6 @@ def ngo_dashboard():
             with st.container(border=True):
                 st.write(f"**From:** {d['donor']} | **Items:** {d['items']}")
                 
-                # Smart Google Maps Link Display
                 if " | MapsLink: " in d['location']:
                     address_part, link_part = d['location'].split(" | MapsLink: ")
                     st.write(f"**Loc:** {address_part}")
@@ -368,4 +445,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                                 
+                    
