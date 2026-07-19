@@ -64,7 +64,7 @@ if "points" not in st.session_state:
 def login_register_page():
     # Logo Image
     try:
-        st.image("1000002433.png", width=250)
+        st.image("logo.png", width=250)
     except:
         pass # Skips if image is missing to prevent crash
         
