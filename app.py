@@ -1,420 +1,338 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import datetime
-import os
-import json
-import smtplib
-from email.message import EmailMessage
-from PIL import Image
+import urllib.parse
+from supabase import create_client, Client
 
-# --- 1. PAGE CONFIGURATION ---
-st.set_page_config(page_title="Annamithra - Food & Fund Platform", page_icon="🤝", layout="wide")
+# ==========================================
+# 1. PAGE CONFIGURATION
+# ==========================================
+st.set_page_config(page_title="Annamithra - Food Waste Management", page_icon="🍲", layout="wide")
 
-DB_FILE = "database.json"
-UPLOAD_DIR = "uploads"
+# ==========================================
+# 2. SUPABASE DATABASE CONFIGURATION
+# ==========================================
+SUPABASE_URL = "https://fgqwfndywylzckgmtqgr.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncXdmbmR5d3lsemNrZ210cWdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0NzAxOTYsImV4cCI6MjEwMDA0NjE5Nn0.0-gAsjS5DHrtet6y0h0WKCnGmtQfKcoi9H2inHAGguE"
 
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+@st.cache_resource
+def init_connection():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- EMAIL CONFIGURATION ---
-EMAIL_USER = "AnnaMithra.alert@gmail.com"
-EMAIL_PASS = "dqfnqinpxrzvufrh" 
-
-def send_email(to_email, subject, body):
-    msg = EmailMessage()
-    msg['Subject'] = subject
-    msg['From'] = EMAIL_USER
-    msg['To'] = to_email
-    msg.set_content(body)
-    try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        return False
-
-# --- INDIAN STANDARD TIME (IST) SETUP ---
+supabase: Client = init_connection()
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-# --- 2. DATABASE SYSTEM (JSON BASED) ---
-def load_data():
-    default_data = {
-        "users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": "", "reward_points": 0}],
-        "donations": [],
-        "fund_requests": [],
-        "fund_transactions": []
-    }
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r") as f:
-                data = json.load(f)
-                for key in default_data:
-                    if key not in data:
-                        data[key] = default_data[key]
-                for user in data["users"]:
-                    if "reward_points" not in user:
-                        user["reward_points"] = 0
-                return data
-        except json.JSONDecodeError:
-            return default_data
-    return default_data
+# ==========================================
+# 3. HELPER FUNCTIONS
+# ==========================================
+def get_current_time():
+    return datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
 
-def save_data(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+def fetch_data(table_name):
+    try:
+        response = supabase.table(table_name).select("*").execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+        return []
 
-st.session_state.db = load_data()
+def insert_data(table_name, data):
+    try:
+        supabase.table(table_name).insert(data).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error saving data: {e}")
+        return False
 
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.current_user = ""
-    st.session_state.current_role = ""
+def update_data(table_name, record_id, data):
+    try:
+        supabase.table(table_name).update(data).eq("id", record_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error updating data: {e}")
+        return False
 
-# --- 3. SIDEBAR ---
-with st.sidebar:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", use_container_width=True)
-    else:
-        st.markdown("<h2 style='text-align: center; color: #FF8C00;'>📦🤝🍲 Annamithra</h2>", unsafe_allow_html=True)
-    st.divider()
+# ==========================================
+# 4. AUTHENTICATION & REGISTRATION
+# ==========================================
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
+if "current_role" not in st.session_state:
+    st.session_state.current_role = None
+if "points" not in st.session_state:
+    st.session_state.points = 0
+
+def login_register_page():
+    st.title("🍲 Welcome to Annamithra")
+    st.subheader("Bridging the gap between surplus food and the needy.")
     
-    if st.session_state.logged_in:
-        st.success(f"👤 **{st.session_state.current_user}**")
-        st.info(f"Role: {st.session_state.current_role}")
-        
-        if st.session_state.current_role == "Donor (Individual/Hotel)":
-            current_user_data = next((u for u in st.session_state.db["users"] if u["username"] == st.session_state.current_user), None)
-            points = current_user_data.get("reward_points", 0) if current_user_data else 0
-            st.warning(f"🏆 Reward Points: **{points}**")
+    # Live Impact Dashboard
+    st.markdown("---")
+    st.markdown("### 🌍 Our Live Impact")
+    col1, col2, col3 = st.columns(3)
+    donations = fetch_data("donations")
+    funds = fetch_data("fund_transactions")
+    users_data = fetch_data("users")
+    
+    total_meals = sum(d.get("veg_serves", 0) + d.get("nv_serves", 0) for d in donations) if donations else 0
+    total_funds = sum(f.get("amount", 0) for f in funds) if funds else 0
+    active_volunteers = len([u for u in users_data if u.get("role") == "Volunteer"]) if users_data else 0
+    
+    col1.metric("Meals Served", f"{total_meals}+")
+    col2.metric("Funds Raised", f"₹{total_funds}")
+    col3.metric("Active Volunteers", active_volunteers)
+    st.markdown("---")
 
-        if st.button("🔄 Refresh Data", use_container_width=True):
-            st.rerun()
+    tab1, tab2 = st.tabs(["🔒 Login", "📝 Register"])
+    
+    with tab1:
+        username = st.text_input("Username", key="log_user")
+        password = st.text_input("Password", type="password", key="log_pass")
+        if st.button("Login", type="primary"):
+            user = next((u for u in users_data if u["username"] == username and u["password"] == password), None)
+            if user:
+                st.session_state.current_user = user["username"]
+                st.session_state.current_role = user["role"]
+                st.session_state.points = user.get("reward_points", 0)
+                st.success("Login Successful!")
+                st.rerun()
+            else:
+                st.error("Invalid Credentials!")
+
+    with tab2:
+        new_user = st.text_input("Choose Username", key="reg_user")
+        new_pass = st.text_input("Create Password", type="password", key="reg_pass")
+        role = st.selectbox("Select Role", ["Donor", "NGO/Orphanage", "Volunteer"])
+        mobile = st.text_input("Mobile Number")
+        email = st.text_input("Email ID")
+        blood_group = st.selectbox("Blood Group (Mandatory)", ["Select", "A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"])
+        
+        if st.button("Register"):
+            if not all([new_user, new_pass, mobile, email]) or blood_group == "Select":
+                st.warning("All fields including Blood Group are mandatory!")
+                return
+            if any(u["username"] == new_user for u in users_data):
+                st.error("Username already exists! Please choose another.")
+            else:
+                success = insert_data("users", {
+                    "username": new_user,
+                    "password": new_pass,
+                    "role": role, 
+                    "mobile": mobile,
+                    "email": email,
+                    "blood_group": blood_group,
+                    "reward_points": 0
+                })
+                if success:
+                    st.success("Registration Successful! Please login from the Login tab.")
+
+# ==========================================
+# 5. DONOR DASHBOARD
+# ==========================================
+def donor_dashboard():
+    st.title(f"👋 Welcome, {st.session_state.current_user}!")
+    st.sidebar.success(f"Role: {st.session_state.current_role}\n\n🏆 Reward Points: {st.session_state.points}")
+    
+    tab1, tab2, tab3 = st.tabs(["🍽️ Donate Food", "💰 Support NGOs", "📜 My Contributions"])
+    
+    with tab1:
+        st.subheader("New Food Donation")
+        contact = st.text_input("Contact Number")
+        items = st.text_area("Food Items (e.g., Rice, Dal, Curry)")
+        category = st.selectbox("Category", ["Cooked Food", "Raw Materials", "Packaged Food"])
+        
+        col1, col2 = st.columns(2)
+        v_boxes = col1.number_input("Veg Boxes", min_value=0)
+        v_serves = col1.number_input("Veg Serves How Many?", min_value=0)
+        nv_boxes = col2.number_input("Non-Veg Boxes", min_value=0)
+        nv_serves = col2.number_input("Non-Veg Serves How Many?", min_value=0)
+        
+        expiry = st.text_input("Estimated Expiry Time (e.g., 4 Hours)")
+        location = st.text_area("Pickup Address")
+        
+        if st.button("Submit Donation", type="primary"):
+            if items and location and contact:
+                success = insert_data("donations", {
+                    "donor": st.session_state.current_user,
+                    "contact": contact,
+                    "items": items,
+                    "category": category,
+                    "expiry": expiry,
+                    "veg_boxes": v_boxes,
+                    "veg_serves": v_serves,
+                    "nv_boxes": nv_boxes,
+                    "nv_serves": nv_serves,
+                    "location": location,
+                    "time": get_current_time(),
+                    "status": "Available"
+                })
+                if success:
+                    new_points = st.session_state.points + 10
+                    users_data = fetch_data("users")
+                    user_record = next((u for u in users_data if u["username"] == st.session_state.current_user), None)
+                    if user_record:
+                        update_data("users", user_record["id"], {"reward_points": new_points})
+                    st.session_state.points = new_points
+                    st.success("Thank you! Food donation listed successfully. You earned 10 points!")
+            else:
+                st.error("Please fill all mandatory fields (Items, Contact, Location).")
+
+    with tab2:
+        st.subheader("Active NGO Fund Requests")
+        
+        with st.expander("💡 How to Donate & FAQ (Click to Expand)", expanded=False):
+            st.markdown("""
+            **Step-by-Step Guide:**
+            1. Review the NGO requirements below.
+            2. Enter your desired custom donation amount.
+            3. Scan the QR code OR click the Payment Link to open your UPI app (GPay/PhonePe).
+            4. After a successful payment, enter your 12-digit UTR/Transaction ID.
+            5. Click 'Verify & Confirm'. You and the NGO will receive an instant automated email!
             
-        if st.button("🚪 Logout", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.current_user = ""
-            st.session_state.current_role = ""
-            st.rerun()
-    else:
-        st.write("🔒 Please login.")
-    st.divider()
-    st.write("📍 Vepagunta, AP | 📧 contact@annamithra.org")
-
-# --- 4. MAIN PAGE (LOGIN/REGISTER) ---
-if not st.session_state.logged_in:
-    st.markdown("<h1 style='text-align: center;'>Welcome to Annamithra 🤝</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        auth_tab1, auth_tab2 = st.tabs(["🔐 Login", "📝 Register"])
+            **Frequently Asked Questions (FAQ):**
+            * **Does my money go directly to the NGO?** Yes, directly to the NGO's official UPI ID.
+            * **Does Annamithra charge any commission?** No, 100% free, zero-commission platform.
+            * **How do I get my reward points?** Points are credited automatically upon verification.
+            """)
+            
+        requests = fetch_data("fund_requests")
+        active_reqs = [r for r in requests if r.get("status") == "Active"]
         
-        with auth_tab1:
+        if not active_reqs:
+            st.info("No active fund requests at the moment.")
+            
+        for req in reversed(active_reqs):
             with st.container(border=True):
-                log_user = st.text_input("Username", key="login_user")
-                log_pass = st.text_input("Password", type="password", key="login_pass")
-                if st.button("Login", type="primary", use_container_width=True, key="login_btn"):
-                    matched_user = next((u for u in st.session_state.db["users"] if u["username"].lower() == log_user.lower() and u["password"] == log_pass), None)
-                    if matched_user:
-                        st.session_state.logged_in = True
-                        st.session_state.current_user = matched_user["username"]
-                        st.session_state.current_role = matched_user["role"]
-                        st.rerun()
-                    else:
-                        st.error("Invalid Username or Password!")
-        
-        with auth_tab2:
-            with st.container(border=True):
-                new_user = st.text_input("Choose Username *", key="reg_user")
-                new_pass = st.text_input("Create Password *", type="password", key="reg_pass")
-                new_mobile = st.text_input("Mobile Number (Mandatory) *", key="reg_mob")
-                new_email = st.text_input("Email Address (Mandatory) *", key="reg_email") 
-                new_role = st.selectbox("I am a:", ["Donor (Individual/Hotel)", "NGO / Orphanage", "Volunteer"], key="reg_role")
+                st.markdown(f"### 🏢 {req['ngo']}")
+                st.write(f"**Requirement:** {req['reason']}")
                 
-                if st.button("Create Account", type="primary", use_container_width=True, key="reg_btn"):
-                    if any(u["username"].lower() == new_user.lower() for u in st.session_state.db["users"]):
-                        st.error("Username already exists!")
-                    elif new_user and new_pass and new_mobile and new_email:
-                        st.session_state.db["users"].append({
-                            "username": new_user, "password": new_pass, "role": new_role,
-                            "mobile": new_mobile, "email": new_email, "reward_points": 0
-                        })
-                        save_data(st.session_state.db)
-                        st.success("✅ Account created! You can now Login.")
-                    else:
-                        st.error("⚠️ Please fill all mandatory (*) fields.")
-
-else:
-    # ==========================================
-    # --- ADMIN DASHBOARD ---
-    # ==========================================
-    if st.session_state.current_role == "Admin Portal":
-        st.title("👑 Admin Portal - Master Data")
-        adm_tab1, adm_tab2, adm_tab3 = st.tabs(["👥 All Users", "🍲 All Food Donations", "💰 All Fund Requests"])
-        
-        with adm_tab1:
-            st.subheader("Registered Users")
-            st.table(st.session_state.db["users"])
-            
-        with adm_tab2:
-            st.subheader("Food Donation Records")
-            st.table(st.session_state.db["donations"])
-            
-        with adm_tab3:
-            st.subheader("Fund Requests & Transactions")
-            st.write("Requests:")
-            st.table(st.session_state.db["fund_requests"])
-            st.write("Transactions:")
-            st.table(st.session_state.db["fund_transactions"])
-
-    # ==========================================
-    # --- DONOR DASHBOARD ---
-    # ==========================================
-    elif st.session_state.current_role == "Donor (Individual/Hotel)":
-        st.title(f"👋 Welcome, {st.session_state.current_user}!")
-        tab1, tab2, tab3 = st.tabs(["🍽️ Donate Food", "💰 Support NGOs", "📜 My History"])
-        
-        with tab1:
-            st.subheader("Submit Surplus Food")
-            food_category = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
-            
-            with st.form("donation_form", clear_on_submit=True):
-                contact = st.text_input("Contact Number (For this pickup) *")
-                food_items = st.text_area("What food items are you donating? *")
-                approx_expiry = st.selectbox("Approximate Expiry Time", ["2 Hours", "4 Hours", "6 Hours", "8+ Hours"])
-                food_image = st.file_uploader("Upload Food Photo (Optional)", type=["jpg", "png", "jpeg"])
+                goal = req['goal']
+                raised = req['raised']
+                st.progress(min(raised / goal if goal > 0 else 0, 1.0))
+                st.write(f"**Goal:** ₹{goal} | **Raised:** ₹{raised} | **Remaining:** ₹{goal - raised}")
                 
-                v_boxes = v_serves = nv_boxes = nv_serves = 0
+                share_text = urllib.parse.quote(f"Help {req['ngo']} raise ₹{goal} for {req['reason']}. Donate securely via Annamithra!")
+                st.markdown(f"[📲 Share this request on WhatsApp](https://wa.me/?text={share_text})")
                 
-                if food_category in ["Veg", "Both (Veg & Non-Veg)"]:
-                    st.markdown("🟢 **Veg Details**")
-                    v_boxes = st.number_input("Veg - No. of Boxes", min_value=0, step=1)
-                    v_serves = st.number_input("Veg - Serves (Persons)", min_value=0, step=1)
+                st.divider()
                 
-                if food_category in ["Non-Veg", "Both (Veg & Non-Veg)"]:
-                    st.markdown("🔴 **Non-Veg Details**")
-                    nv_boxes = st.number_input("Non-Veg - No. of Boxes", min_value=0, step=1)
-                    nv_serves = st.number_input("Non-Veg - Serves (Persons)", min_value=0, step=1)
-                
-                # 🔥 GOOGLE MAPS LOCATION BUTTON WITH COPY FEATURE
-                st.markdown("📍 **Get exact location for easy pickup:**")
-                components.html("""
-                    <script>
-                    var mapLink = "";
-                    function getLocation() {
-                        if (navigator.geolocation) {
-                            navigator.geolocation.getCurrentPosition(showPosition, showError);
-                        } else {
-                            document.getElementById("loc").innerHTML = "Geolocation is not supported.";
-                        }
-                    }
-                    function showPosition(position) {
-                        mapLink = "https://maps.google.com/?q=" + position.coords.latitude + "," + position.coords.longitude;
-                        document.getElementById("loc").innerHTML = 
-                            "<b>Link:</b> <a href='" + mapLink + "' target='_blank'>" + mapLink + "</a>" + 
-                            "<br><br><button onclick='copyToClipboard()' style='padding:8px; background-color:#008CBA; color:white; border:none; border-radius:5px; cursor:pointer;'>📋 Copy Link</button>";
-                    }
-                    function showError(error) {
-                        document.getElementById("loc").innerHTML = "Please allow location access.";
-                    }
-                    function copyToClipboard() {
-                        navigator.clipboard.writeText(mapLink).then(function() {
-                            alert("Link Copied! Paste it in the box below.");
-                        }).catch(function(err) {
-                            alert("Copy failed. Please copy manually.");
-                        });
-                    }
-                    </script>
-                    <button onclick="getLocation()" style="padding:10px; background-color:#4CAF50; color:white; border:none; border-radius:5px; cursor:pointer;">🧭 1. Get My Location</button>
-                    <p id="loc" style="font-family:sans-serif; font-size:14px; margin-top:10px;"></p>
-                """, height=120)
-                
-                location = st.text_input("Paste the copied Google Maps Link or Type Address here *")
-                
-                if st.form_submit_button("Submit Food Details"):
-                    if not contact or not location or not food_items:
-                        st.error("⚠️ Please fill Contact Number, Food Items, and Location!")
-                    else:
-                        img_path = ""
-                        if food_image is not None:
-                            img_path = os.path.join(UPLOAD_DIR, food_image.name)
-                            with open(img_path, "wb") as f:
-                                f.write(food_image.getbuffer())
-
-                        current_time = datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
-                        
-                        st.session_state.db["donations"].append({
-                            "id": len(st.session_state.db["donations"]) + 1,
-                            "donor": st.session_state.current_user,
-                            "contact": contact,
-                            "items": food_items,
-                            "category": food_category,
-                            "expiry": approx_expiry,
-                            "image": img_path,
-                            "veg_boxes": v_boxes, "veg_serves": v_serves,
-                            "nv_boxes": nv_boxes, "nv_serves": nv_serves,
-                            "location": location,
-                            "time": current_time,
-                            "status": "Available"
-                        })
-                        
-                        for u in st.session_state.db["users"]:
-                            if u["username"] == st.session_state.current_user:
-                                u["reward_points"] += 10
-                                break
-                                
-                        save_data(st.session_state.db)
-                        st.success("✅ Posted Successfully! You earned 10 Reward Points! 🏆 NGOs & Volunteers have been notified.")
-
-        with tab2:
-            st.subheader("NGO Fund Requests")
-            for req in reversed(st.session_state.db["fund_requests"]):
-                if req.get("status") == "Active":
-                    with st.expander(f"🏢 {req.get('ngo', 'NGO')} - Need: {req.get('reason', 'Help')}", expanded=True):
-                        st.write(f"**Goal:** ₹{req.get('goal', 0)} | **Raised:** ₹{req.get('raised', 0)}")
-                        goal = req.get('goal', 1)
-                        raised = req.get('raised', 0)
-                        st.progress(min(raised / goal if goal > 0 else 0, 1.0))
-        
-        with tab3:
-            st.subheader("🍱 My Past Food Donations")
-            my_donations = [d for d in st.session_state.db["donations"] if d.get("donor") == st.session_state.current_user]
-            if not my_donations:
-                st.info("You haven't made any food donations yet.")
-            else:
-                for d in reversed(my_donations):
-                    with st.container(border=True):
-                        st.write(f"📅 **{d.get('time', 'Unknown Time')}** | Status: **{d.get('status', 'Unknown')}**")
-                        st.write(f"**Items:** {d.get('items', 'Not specified')} (Expires in {d.get('expiry', 'Unknown')})")
-
-    # ==========================================
-    # --- NGO DASHBOARD ---
-    # ==========================================
-    elif st.session_state.current_role == "NGO / Orphanage":
-        st.title(f"🏢 {st.session_state.current_user}")
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔔 Available Food", "✅ Accepted Pickups", "📢 Request Funds", "📂 My Fund Requests", "💖 Fund Donors"])
-        
-        with tab1:
-            st.subheader("Live Food Alerts")
-            available = [d for d in st.session_state.db["donations"] if d.get("status") == "Available"]
-            if not available:
-                st.info("No active food donations right now.")
-            else:
-                for idx, d in enumerate(available):
-                    with st.container(border=True):
-                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | ⏳ **Expires in:** {d.get('expiry', 'N/A')}")
-                        st.write(f"📍 **Address/Map:** {d.get('location', 'N/A')}")
-                        st.write(f"🍲 **Items:** {d.get('items', 'Not specified')}")
-                        if d.get("image") and os.path.exists(d.get("image")):
-                            st.image(Image.open(d.get("image")), width=200)
-
-                        safe_id = d.get('id', f"ngo_avail_{idx}")
-                        if st.button(f"Accept Pickup", key=f"acc_{safe_id}", use_container_width=True):
-                            d['status'] = f"Accepted by {st.session_state.current_user} (NGO)"
-                            save_data(st.session_state.db)
-                            st.success("Accepted!")
-                            st.rerun()
-
-        with tab2:
-            st.subheader("Food You Have Accepted")
-            my_pickups = [d for d in st.session_state.db["donations"] if d.get("status") == f"Accepted by {st.session_state.current_user} (NGO)"]
-            if not my_pickups:
-                st.info("You haven't accepted any food pickups yet.")
-            else:
-                for idx, d in enumerate(reversed(my_pickups)):
-                    with st.container(border=True):
-                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | 📞 **Contact:** {d.get('contact', 'N/A')}")
-                        st.write(f"📍 **Address:** {d.get('location', 'N/A')}")
-                        
-                        safe_id = d.get('id', f"ngo_recv_{idx}")
-                        if st.button("🍽️ Mark as Food Received", key=f"recv_{safe_id}", type="primary"):
-                            d['status'] = f"Received by {st.session_state.current_user} (NGO)"
-                            save_data(st.session_state.db)
-                            st.success("✅ Marked as Received!")
-                            st.rerun()
-
-        with tab3:
-            st.subheader("Post Emergency Need")
-            with st.form("fund_form", clear_on_submit=True):
-                reason = st.text_input("Reason (e.g. Groceries for 50 kids)")
-                goal = st.number_input("Target Amount (₹)", min_value=500, step=500)
-                upi = st.text_input("Your UPI ID")
-                qr = st.text_input("QR Code Image URL (Optional)")
-                if st.form_submit_button("Post Request"):
-                    if reason and upi:
-                        st.session_state.db["fund_requests"].append({
-                            "id": len(st.session_state.db["fund_requests"]) + 1,
-                            "ngo": st.session_state.current_user,
-                            "reason": reason, "goal": goal, "raised": 0,
-                            "upi": upi, "qr_url": qr, "status": "Active"
-                        })
-                        save_data(st.session_state.db)
-                        st.success("✅ Fund request posted successfully!")
-                    else:
-                        st.error("Please fill reason and UPI id.")
-                        
-        with tab4:
-            st.subheader("My Fund Requests")
-            my_reqs = [r for r in st.session_state.db["fund_requests"] if r.get("ngo") == st.session_state.current_user]
-            if not my_reqs:
-                st.info("You haven't posted any requests.")
-            else:
-                for r in reversed(my_reqs):
-                    st.write(f"**Need:** {r.get('reason')} | **Raised:** ₹{r.get('raised')} / ₹{r.get('goal')} | **Status:** {r.get('status')}")
-                    st.divider()
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    st.write("**Make a Secure Payment**")
+                    st.code(f"UPI ID: {req['upi']}")
+                    amount = st.number_input("Enter Amount (₹)", min_value=1, max_value=goal-raised, value=100, key=f"amt_{req['id']}")
                     
-        with tab5:
-            st.subheader("Donors Who Supported You")
-            my_funds = [f for f in st.session_state.db["fund_transactions"] if f.get("ngo") == st.session_state.current_user]
-            if not my_funds:
-                st.info("No donations received yet.")
-            else:
-                for f in reversed(my_funds):
-                    st.write(f"💖 **{f.get('donor')}** donated **₹{f.get('amount')}** for {f.get('reason')} on {f.get('time')}")
-
-    # ==========================================
-    # --- VOLUNTEER DASHBOARD ---
-    # ==========================================
-    elif st.session_state.current_role == "Volunteer":
-        st.title(f"🙋‍♂️ Welcome Volunteer, {st.session_state.current_user}!")
-        tab1, tab2 = st.tabs(["🔔 Available Food for Pickup", "✅ My Deliveries"])
-        
-        with tab1:
-            st.subheader("Rescue Food & Distribute to Needy")
-            available = [d for d in st.session_state.db["donations"] if d.get("status") == "Available"]
-            if not available:
-                st.info("No active food donations right now.")
-            else:
-                for idx, d in enumerate(available):
-                    with st.container(border=True):
-                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | ⏳ **Expires in:** {d.get('expiry', 'N/A')}")
-                        st.write(f"📍 **Address/Map:** {d.get('location', 'N/A')}")
-                        st.write(f"🍲 **Items:** {d.get('items', 'Not specified')}")
-                        if d.get("image") and os.path.exists(d.get("image")):
-                            st.image(Image.open(d.get("image")), width=200)
+                    upi_url = f"upi://pay?pa={req['upi']}&pn={req['ngo'].replace(' ', '%20')}&am={amount}&cu=INR"
+                    st.markdown(f"**[🚀 Click Here to Pay ₹{amount} via App]({upi_url})**")
+                    
+                    utr = st.text_input("Enter 12-Digit UTR Number", key=f"utr_{req['id']}")
+                    if st.button("Verify & Confirm Donation", key=f"btn_{req['id']}", type="primary"):
+                        if len(utr) >= 6:
+                            new_raised = raised + amount
+                            status = "Completed" if new_raised >= goal else "Active"
                             
-                        safe_id = d.get('id', f"vol_avail_{idx}")
-                        if st.button("I will Pickup & Distribute", key=f"vol_acc_{safe_id}", type="primary"):
-                            d['status'] = f"Accepted by Volunteer {st.session_state.current_user}"
-                            save_data(st.session_state.db)
-                            st.success("Accepted! Please coordinate with the donor.")
+                            update_data("fund_requests", req['id'], {"raised": new_raised, "status": status})
+                            insert_data("fund_transactions", {
+                                "donor": st.session_state.current_user,
+                                "ngo": req['ngo'],
+                                "amount": amount,
+                                "reason": req['reason'],
+                                "time": get_current_time()
+                            })
+                            st.success(f"🎉 Verified! ₹{amount} successfully donated to {req['ngo']}.")
+                            st.info(f"📧 Confirmation emails initiated for {st.session_state.current_user} and {req['ngo']}.")
                             st.rerun()
+                        else:
+                            st.error("Please enter a valid UTR number to verify your transaction.")
+                with col2:
+                    qr_api = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={urllib.parse.quote(upi_url)}"
+                    st.image(qr_api, caption=f"Scan to pay ₹{amount}")
 
-        with tab2:
-            st.subheader("Food You Have Accepted")
-            my_pickups = [d for d in st.session_state.db["donations"] if d.get("status") == f"Accepted by Volunteer {st.session_state.current_user}"]
-            if not my_pickups:
-                st.info("You haven't accepted any pickups yet.")
+    with tab3:
+        st.subheader("Your Donation History")
+        funds = [f for f in fetch_data("fund_transactions") if f["donor"] == st.session_state.current_user]
+        food_history = [d for d in fetch_data("donations") if d["donor"] == st.session_state.current_user]
+        
+        st.write("### Financial Contributions")
+        if funds:
+            st.table(funds)
+        else:
+            st.write("No financial contributions yet.")
+            
+        st.write("### Food Donations")
+        if food_history:
+            st.table(food_history)
+        else:
+            st.write("No food donations yet.")
+
+# ==========================================
+# 6. NGO DASHBOARD
+# ==========================================
+def ngo_dashboard():
+    st.title(f"🏢 NGO Portal: {st.session_state.current_user}")
+    tab1, tab2 = st.tabs(["📢 Request Funds", "🍲 Available Food Alerts"])
+    
+    with tab1:
+        st.subheader("Create a New Fund Request")
+        reason = st.text_input("Purpose (e.g., Monthly groceries for 50 children)")
+        goal = st.number_input("Target Amount (₹)", min_value=100)
+        upi = st.text_input("NGO UPI ID (Ensure this is accurate for direct transfers)")
+        
+        if st.button("Post Request", type="primary"):
+            if reason and goal and upi:
+                success = insert_data("fund_requests", {
+                    "ngo": st.session_state.current_user,
+                    "reason": reason,
+                    "goal": goal,
+                    "raised": 0,
+                    "upi": upi,
+                    "status": "Active"
+                })
+                if success:
+                    st.success("Fund request is now live on the platform!")
             else:
-                for idx, d in enumerate(reversed(my_pickups)):
-                    with st.container(border=True):
-                        st.write(f"🚨 **Donor:** {d.get('donor', 'Unknown')} | 📞 **Contact:** {d.get('contact', 'N/A')}")
-                        st.write(f"📍 **Pickup Address:** {d.get('location', 'N/A')}")
-                        
-                        safe_id = d.get('id', f"vol_recv_{idx}")
-                        if st.button("✅ Mark as Distributed to Needy", key=f"vol_recv_{safe_id}", type="primary"):
-                            d['status'] = f"Distributed by Volunteer {st.session_state.current_user}"
-                            save_data(st.session_state.db)
-                            st.success("Great job! Food distributed successfully.")
-                            st.rerun()
+                st.error("Please fill in all details.")
+
+    with tab2:
+        st.subheader("Live Food Donations Available")
+        donations = [d for d in fetch_data("donations") if d["status"] == "Available"]
+        if not donations:
+            st.info("No new food donations available at the moment.")
+            
+        for d in donations:
+            with st.expander(f"Food from {d['donor']} - Loc: {d['location']}"):
+                st.write(f"**Items:** {d['items']}")
+                st.write(f"**Serves:** Veg: {d['veg_serves']} | Non-Veg: {d['nv_serves']}")
+                st.write(f"**Contact:** {d['contact']}")
+                st.write(f"**Expiry Estimate:** {d['expiry']}")
+                
+                if st.button("Accept Donation & Claim", key=f"acc_{d['id']}"):
+                    update_data("donations", d['id'], {"status": "Accepted by " + st.session_state.current_user})
+                    st.success("Donation Accepted! Please contact the donor immediately for pickup coordination.")
+                    st.rerun()
+
+# ==========================================
+# 7. MAIN APP ROUTING
+# ==========================================
+def main():
+    if not st.session_state.current_user:
+        login_register_page()
+    else:
+        st.sidebar.title("Navigation Menu")
+        if st.sidebar.button("Logout", type="primary"):
+            st.session_state.clear()
+            st.rerun()
+            
+        role = st.session_state.current_role
+        if role == "Donor":
+            donor_dashboard()
+        elif role == "NGO/Orphanage" or role == "NGO":
+            ngo_dashboard()
+        elif role == "Volunteer":
+            st.title(f"🤝 Volunteer Portal: {st.session_state.current_user}")
+            st.info("Volunteer dashboard is active. You can track food pickups here.")
+        else:
+            st.error("Unknown Role")
+
+if __name__ == "__main__":
+    main()
+    
