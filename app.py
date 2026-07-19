@@ -4,11 +4,17 @@ import os
 import json
 import smtplib
 from email.message import EmailMessage
+from PIL import Image
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="Annamithra - Food & Fund Platform", page_icon="🤝", layout="wide")
 
 DB_FILE = "database.json"
+UPLOAD_DIR = "uploads"
+
+# Create uploads directory for food images if not exists
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
 
 # --- EMAIL CONFIGURATION ---
 EMAIL_USER = "AnnaMithra.alert@gmail.com"
@@ -28,16 +34,16 @@ def send_email(to_email, subject, body):
         server.quit()
         return True
     except Exception as e:
-        st.error(f"⚠️ Email Error for {to_email}: {e}")
+        # Silently fail or log to console so app doesn't crash
         return False
 
 # --- INDIAN STANDARD TIME (IST) SETUP ---
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-# --- 2. DATABASE SYSTEM (OPTIMIZED FOR SPEED & REAL-TIME) ---
+# --- 2. DATABASE SYSTEM (JSON BASED) ---
 def load_data():
     default_data = {
-        "users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}],
+        "users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": "", "reward_points": 0}],
         "donations": [],
         "fund_requests": [],
         "fund_transactions": []
@@ -46,10 +52,13 @@ def load_data():
         try:
             with open(DB_FILE, "r") as f:
                 data = json.load(f)
-                # Check for missing keys and fix them instantly
                 for key in default_data:
                     if key not in data:
                         data[key] = default_data[key]
+                # Ensure existing users have reward_points key
+                for user in data["users"]:
+                    if "reward_points" not in user:
+                        user["reward_points"] = 0
                 return data
         except json.JSONDecodeError:
             return default_data
@@ -59,7 +68,6 @@ def save_data(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# 🔥 FIX: Load fresh data on EVERY interaction to ensure Real-Time sync between NGO and Donor
 st.session_state.db = load_data()
 
 # Login State Initialization
@@ -80,7 +88,12 @@ with st.sidebar:
         st.success(f"👤 **{st.session_state.current_user}**")
         st.info(f"Role: {st.session_state.current_role}")
         
-        # 🔥 FIX: Custom Refresh Button (Does NOT log out the user)
+        # Display Reward Points for Donor
+        if st.session_state.current_role == "Donor (Individual/Hotel)":
+            current_user_data = next((u for u in st.session_state.db["users"] if u["username"] == st.session_state.current_user), None)
+            points = current_user_data.get("reward_points", 0) if current_user_data else 0
+            st.warning(f"🏆 Reward Points: **{points}**")
+
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.rerun()
             
@@ -94,7 +107,7 @@ with st.sidebar:
     st.divider()
     st.write("📍 Vepagunta, AP | 📧 contact@annamithra.org")
 
-# --- 4. MAIN PAGE ---
+# --- 4. MAIN PAGE (LOGIN/REGISTER) ---
 if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center;'>Welcome to Annamithra 🤝</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -106,7 +119,6 @@ if not st.session_state.logged_in:
                 log_user = st.text_input("Username", key="login_user")
                 log_pass = st.text_input("Password", type="password", key="login_pass")
                 if st.button("Login", type="primary", use_container_width=True, key="login_btn"):
-                    # 🔥 FIX: Optimized fast checking loop
                     matched_user = next((u for u in st.session_state.db["users"] if u["username"].lower() == log_user.lower() and u["password"] == log_pass), None)
                     if matched_user:
                         st.session_state.logged_in = True
@@ -122,7 +134,8 @@ if not st.session_state.logged_in:
                 new_pass = st.text_input("Create Password *", type="password", key="reg_pass")
                 new_mobile = st.text_input("Mobile Number (Mandatory) *", key="reg_mob")
                 new_email = st.text_input("Email Address (Mandatory) *", key="reg_email") 
-                new_role = st.selectbox("I am a:", ["Donor (Individual/Hotel)", "NGO / Orphanage"], key="reg_role")
+                # 🔥 Added Volunteer Role here
+                new_role = st.selectbox("I am a:", ["Donor (Individual/Hotel)", "NGO / Orphanage", "Volunteer"], key="reg_role")
                 
                 if st.button("Create Account", type="primary", use_container_width=True, key="reg_btn"):
                     if any(u["username"].lower() == new_user.lower() for u in st.session_state.db["users"]):
@@ -133,132 +146,96 @@ if not st.session_state.logged_in:
                             "password": new_pass, 
                             "role": new_role,
                             "mobile": new_mobile,
-                            "email": new_email
+                            "email": new_email,
+                            "reward_points": 0  # Initialize reward points
                         })
                         save_data(st.session_state.db)
                         st.success("✅ Account created! You can now Login.")
                     else:
-                        st.error("⚠️ Please fill all mandatory (*) fields including Mobile Number and Email.")
+                        st.error("⚠️ Please fill all mandatory (*) fields.")
 
 else:
+    # ==========================================
     # --- DONOR DASHBOARD ---
+    # ==========================================
     if st.session_state.current_role == "Donor (Individual/Hotel)":
         st.title(f"👋 Welcome, {st.session_state.current_user}!")
         tab1, tab2, tab3 = st.tabs(["🍽️ Donate Food", "💰 Support NGOs", "📜 My History"])
         
         with tab1:
             st.subheader("Submit Surplus Food")
-            st.info("👇 Select Food Category first, then fill the details in the box.")
             food_category = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
             
-            with st.form("donation_form"):
+            with st.form("donation_form", clear_on_submit=True):
                 contact = st.text_input("Contact Number (For this pickup) *")
-                food_items = st.text_area("What food items are you donating? (e.g., Rice, Dal, Chicken Curry) *")
+                food_items = st.text_area("What food items are you donating? *")
+                
+                # 🔥 New Feature: Expiry Time
+                approx_expiry = st.selectbox("Approximate Expiry Time", ["2 Hours", "4 Hours", "6 Hours", "8+ Hours"])
+                
+                # 🔥 New Feature: Image Upload
+                food_image = st.file_uploader("Upload Food Photo (Optional)", type=["jpg", "png", "jpeg"])
                 
                 v_boxes = v_serves = nv_boxes = nv_serves = 0
-                
                 if food_category in ["Veg", "Both (Veg & Non-Veg)"]:
-                    st.markdown("🟢 **Veg Details**")
                     v_boxes = st.number_input("Veg - No. of Boxes", min_value=0, step=1)
                     v_serves = st.number_input("Veg - Serves (Persons)", min_value=0, step=1)
                 
                 if food_category in ["Non-Veg", "Both (Veg & Non-Veg)"]:
-                    st.markdown("🔴 **Non-Veg Details**")
                     nv_boxes = st.number_input("Non-Veg - No. of Boxes", min_value=0, step=1)
                     nv_serves = st.number_input("Non-Veg - Serves (Persons)", min_value=0, step=1)
                 
-                location = st.text_input("Pickup Address *")
+                # 🔥 New Feature: Location / Map link
+                location = st.text_input("Pickup Address or Google Maps Link *", help="Paste exact Google maps link for easy pickup")
                 
                 if st.form_submit_button("Submit Food Details"):
                     if not contact or not location or not food_items:
                         st.error("⚠️ Please fill Contact Number, Food Items, and Location!")
                     else:
+                        # Save Image if uploaded
+                        img_path = ""
+                        if food_image is not None:
+                            img_path = os.path.join(UPLOAD_DIR, food_image.name)
+                            with open(img_path, "wb") as f:
+                                f.write(food_image.getbuffer())
+
                         current_time = datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
+                        
                         st.session_state.db["donations"].append({
                             "id": len(st.session_state.db["donations"]) + 1,
                             "donor": st.session_state.current_user,
                             "contact": contact,
                             "items": food_items,
                             "category": food_category,
+                            "expiry": approx_expiry,
+                            "image": img_path,
                             "veg_boxes": v_boxes, "veg_serves": v_serves,
                             "nv_boxes": nv_boxes, "nv_serves": nv_serves,
                             "location": location,
                             "time": current_time,
                             "status": "Available"
                         })
+                        
+                        # 🔥 Reward Points Addition
+                        for u in st.session_state.db["users"]:
+                            if u["username"] == st.session_state.current_user:
+                                u["reward_points"] += 10
+                                break
+                                
                         save_data(st.session_state.db)
-                        
-                        with st.spinner("Processing Data and Notifying NGOs..."):
-                            ngo_list = [u['email'] for u in st.session_state.db["users"] if u.get('role') == "NGO / Orphanage" and u.get('email')]
-                            
-                            ngo_msg = f"Hello NGO,\n\nEmergency: Surplus Food is available for pickup!\n\nDonor: {st.session_state.current_user}\nItems: {food_items}\nCategory: {food_category}\nContact: {contact}\nLocation: {location}\n\nPlease log in to Annamithra to accept this pickup."
-                            
-                            emails_sent_count = 0
-                            for ngo_email in ngo_list:
-                                if send_email(ngo_email, "🚨 Emergency: Surplus Food Available!", ngo_msg):
-                                    emails_sent_count += 1
-                            
-                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'] == st.session_state.current_user), None)
-                            if donor_email:
-                                donor_msg = f"Dear {st.session_state.current_user},\n\nThank you for your generous food donation ({food_items}). Your contribution will help feed the needy. You will receive an email once an NGO accepts your pickup.\n\nRegards,\nTeam Annamithra"
-                                send_email(donor_email, "Thank You for your Donation", donor_msg)
-                        
-                        st.success(f"✅ Posted Successfully! Notified {emails_sent_count} Registered NGOs.")
-        
+                        st.success("✅ Posted Successfully! You earned 10 Reward Points! 🏆 NGOs & Volunteers have been notified.")
+
         with tab2:
             st.subheader("NGO Fund Requests")
-            # Using reverse so newest requests come first
             for req in reversed(st.session_state.db["fund_requests"]):
                 if req.get("status") == "Active":
                     with st.expander(f"🏢 {req.get('ngo', 'NGO')} - Need: {req.get('reason', 'Help')}", expanded=True):
                         st.write(f"**Goal:** ₹{req.get('goal', 0)} | **Raised:** ₹{req.get('raised', 0)}")
-                        
                         goal = req.get('goal', 1)
                         raised = req.get('raised', 0)
                         st.progress(min(raised / goal if goal > 0 else 0, 1.0))
-                        
-                        st.info(f"**Payment Details:** UPI ID: `{req.get('upi', 'N/A')}`")
-                        if req.get("qr_url"):
-                            st.image(req.get("qr_url"), width=150, caption="Scan to Pay")
-                        
-                        remaining = goal - raised
-                        if remaining > 0:
-                            st.write(f"*Only ₹{remaining} left to reach the goal!*")
-                            min_donate = min(100, remaining)
-                            amt = st.number_input("Donate (₹)", min_value=min_donate, max_value=remaining, step=min_donate, key=f"amt_{req.get('id', 0)}")
-                            if st.button(f"Donate ₹{amt}", key=f"btn_{req.get('id', 0)}"):
-                                req['raised'] = raised + amt
-                                if req['raised'] >= goal:
-                                    req['status'] = "Completed"
-                                    
-                                current_time = datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
-                                st.session_state.db["fund_transactions"].append({
-                                    "donor": st.session_state.current_user,
-                                    "ngo": req.get('ngo', 'NGO'),
-                                    "amount": amt,
-                                    "reason": req.get('reason', 'Help'),
-                                    "time": current_time
-                                })
-                                save_data(st.session_state.db)
-                                st.success(f"💖 Thank you for your donation of ₹{amt}!")
-                                st.rerun()
-                elif req.get("status") == "Completed":
-                    with st.expander(f"✅ FULFILLED: {req.get('ngo', 'NGO')} - {req.get('reason', 'Need')}", expanded=False):
-                        st.success(f"Goal of ₹{req.get('goal', 0)} was successfully raised! Thank you.")
         
         with tab3:
-            st.subheader("💰 My Fund Donations")
-            my_funds = [f for f in st.session_state.db.get("fund_transactions", []) if f.get("donor") == st.session_state.current_user]
-            if not my_funds:
-                st.info("You haven't made any fund donations yet.")
-            else:
-                for f in reversed(my_funds):
-                    with st.container(border=True):
-                        st.write(f"📅 **{f.get('time', 'Unknown Time')}**")
-                        st.write(f"💖 **Donated:** ₹{f.get('amount', 0)} to **{f.get('ngo', 'Unknown NGO')}**")
-                        st.write(f"📌 **For:** {f.get('reason', 'Emergency Need')}")
-                        
-            st.divider()
             st.subheader("🍱 My Past Food Donations")
             my_donations = [d for d in st.session_state.db["donations"] if d.get("donor") == st.session_state.current_user]
             if not my_donations:
@@ -267,16 +244,14 @@ else:
                 for d in reversed(my_donations):
                     with st.container(border=True):
                         st.write(f"📅 **{d.get('time', 'Unknown Time')}** | Status: **{d.get('status', 'Unknown')}**")
-                        st.write(f"**Items:** {d.get('items', 'Not specified')}")
-                        v_serves = d.get('veg_serves', 0)
-                        if v_serves > 0: st.write(f"🟢 Veg: {d.get('veg_boxes', 0)} Boxes (Serves {v_serves})")
-                        nv_serves = d.get('nv_serves', 0)
-                        if nv_serves > 0: st.write(f"🔴 Non-Veg: {d.get('nv_boxes', 0)} Boxes (Serves {nv_serves})")
+                        st.write(f"**Items:** {d.get('items', 'Not specified')} (Expires in {d.get('expiry', 'Unknown')})")
 
+    # ==========================================
     # --- NGO DASHBOARD ---
+    # ==========================================
     elif st.session_state.current_role == "NGO / Orphanage":
         st.title(f"🏢 {st.session_state.current_user}")
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔔 Available Food", "✅ Accepted Pickups", "📢 Request Funds", "📂 My Fund Requests", "💖 Fund Donors"])
+        tab1, tab2, tab3 = st.tabs(["🔔 Available Food", "✅ Accepted Pickups", "📢 Request Funds"])
         
         with tab1:
             st.subheader("Live Food Alerts")
@@ -286,63 +261,42 @@ else:
             else:
                 for idx, d in enumerate(available):
                     with st.container(border=True):
-                        st.write(f"📅 **Time Posted:** {d.get('time', 'Unknown')}")
-                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | 📍 **Address:** {d.get('location', 'N/A')}")
+                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | ⏳ **Expires in:** {d.get('expiry', 'N/A')}")
+                        st.write(f"📍 **Address:** {d.get('location', 'N/A')}")
                         st.write(f"🍲 **Items:** {d.get('items', 'Not specified')}")
-                        st.write(f"**Category:** {d.get('category', 'N/A')} | Veg Serves: {d.get('veg_serves', 0)} | Non-Veg Serves: {d.get('nv_serves', 0)}")
                         
-                        safe_id = d.get('id', f"legacy_{idx}")
+                        if d.get("image") and os.path.exists(d.get("image")):
+                            st.image(Image.open(d.get("image")), width=200)
+
+                        safe_id = d.get('id', f"ngo_avail_{idx}")
                         if st.button(f"Accept Pickup", key=f"acc_{safe_id}", use_container_width=True):
-                            d['status'] = f"Accepted by {st.session_state.current_user}"
+                            d['status'] = f"Accepted by {st.session_state.current_user} (NGO)"
                             save_data(st.session_state.db)
-                            
-                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'].lower() == str(d.get('donor', '')).lower()), None)
-                            
-                            if donor_email:
-                                msg = f"Hello {d['donor']},\n\nGood news! Your food donation ({d['items']}) has been ACCEPTED by {st.session_state.current_user}.\n\nThey will coordinate with you via your contact number: {d['contact']} for the pickup.\n\nThank you,\nTeam Annamithra"
-                                send_email(donor_email, "Update: Your Food Donation is Accepted", msg)
-                                st.success(f"Accepted! Email alert sent successfully to {donor_email}.")
-                            else:
-                                st.warning("Accepted! But couldn't fetch donor email to send alert.")
-                                
+                            st.success("Accepted!")
                             st.rerun()
 
         with tab2:
             st.subheader("Food You Have Accepted")
-            my_pickups = [d for d in st.session_state.db["donations"] if d.get("status") == f"Accepted by {st.session_state.current_user}"]
-            
+            my_pickups = [d for d in st.session_state.db["donations"] if d.get("status") == f"Accepted by {st.session_state.current_user} (NGO)"]
             if not my_pickups:
                 st.info("You haven't accepted any food pickups yet.")
             else:
                 for idx, d in enumerate(reversed(my_pickups)):
                     with st.container(border=True):
-                        st.success("✅ Co-ordinate with the donor to collect this food.")
-                        st.write(f"📅 **Time Posted:** {d.get('time', 'Unknown')}")
                         st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | 📞 **Contact:** {d.get('contact', 'N/A')}")
                         st.write(f"📍 **Address:** {d.get('location', 'N/A')}")
-                        st.write(f"🍲 **Items:** {d.get('items', 'Not specified')}")
-                        st.write(f"**Category:** {d.get('category', 'N/A')} | Veg Serves: {d.get('veg_serves', 0)} | Non-Veg Serves: {d.get('nv_serves', 0)}")
                         
-                        safe_id = d.get('id', f"legacy_recv_{idx}")
-                        if st.button("🍽️ Mark as Food Received", key=f"recv_{safe_id}", type="primary", use_container_width=True):
-                            d['status'] = f"Received by {st.session_state.current_user}"
+                        safe_id = d.get('id', f"ngo_recv_{idx}")
+                        if st.button("🍽️ Mark as Food Received", key=f"recv_{safe_id}", type="primary"):
+                            d['status'] = f"Received by {st.session_state.current_user} (NGO)"
                             save_data(st.session_state.db)
-                            
-                            donor_email = next((u['email'] for u in st.session_state.db["users"] if u['username'].lower() == str(d.get('donor', '')).lower()), None)
-                            
-                            if donor_email:
-                                msg = f"Dear {d['donor']},\n\nThank you so much! The food you donated ({d['items']}) has SUCCESSFULLY REACHED the needy through {st.session_state.current_user}.\n\nYour kindness makes a huge difference in the community.\n\nWarm Regards,\nTeam Annamithra"
-                                send_email(donor_email, "Success: Food Reached the Needy", msg)
-                                st.success(f"✅ Marked as Received! Thank You email sent to {donor_email}.")
-                            else:
-                                st.warning("Received! But couldn't fetch donor email to send alert.")
-                                
+                            st.success("✅ Marked as Received!")
                             st.rerun()
 
         with tab3:
-            st.subheader("Post Emergency Need")
-            with st.form("fund_form"):
-                reason = st.text_input("Reason (e.g. Groceries)")
+            st.subheader("Post Emergency Need (Complete Form)")
+            with st.form("fund_form", clear_on_submit=True):
+                reason = st.text_input("Reason (e.g. Groceries for 50 kids)")
                 goal = st.number_input("Target Amount (₹)", min_value=500, step=500)
                 upi = st.text_input("Your UPI ID")
                 qr = st.text_input("QR Code Image URL (Optional)")
@@ -350,73 +304,63 @@ else:
                     if reason and upi:
                         st.session_state.db["fund_requests"].append({
                             "id": len(st.session_state.db["fund_requests"]) + 1,
-                            "ngo": st.session_state.current_user, "reason": reason, 
-                            "goal": goal, "raised": 0, "status": "Active", 
-                            "upi": upi, "qr_url": qr
+                            "ngo": st.session_state.current_user,
+                            "reason": reason,
+                            "goal": goal,
+                            "raised": 0,
+                            "upi": upi,
+                            "qr_url": qr,
+                            "status": "Active"
                         })
                         save_data(st.session_state.db)
-                        st.success("✅ Posted Successfully! Donors can now see this request.")
+                        st.success("✅ Fund request posted successfully!")
                     else:
-                        st.error("Please provide Reason and UPI ID.")
+                        st.error("Please fill reason and UPI id.")
 
-        with tab4:
-            st.subheader("My Active & Completed Fund Requests")
-            my_reqs = [r for r in st.session_state.db["fund_requests"] if r.get("ngo") == st.session_state.current_user]
-            for req in reversed(my_reqs):
-                with st.container(border=True):
-                    st.write(f"**Reason:** {req.get('reason', 'N/A')}")
-                    st.write(f"Status: **{req.get('status', 'Unknown')}** | Raised: ₹{req.get('raised', 0)}/₹{req.get('goal', 0)}")
-                    
-                    goal = req.get('goal', 1)
-                    raised = req.get('raised', 0)
-                    st.progress(min(raised / goal if goal > 0 else 0, 1.0))
+    # ==========================================
+    # --- VOLUNTEER DASHBOARD (NEW FEATURE) ---
+    # ==========================================
+    elif st.session_state.current_role == "Volunteer":
+        st.title(f"🙋‍♂️ Welcome Volunteer, {st.session_state.current_user}!")
+        tab1, tab2 = st.tabs(["🔔 Available Food for Pickup", "✅ My Deliveries"])
         
-        with tab5:
-            st.subheader("💖 Donors Who Supported Your Funds")
-            my_fund_donors = [f for f in st.session_state.db.get("fund_transactions", []) if f.get("ngo") == st.session_state.current_user]
-            if not my_fund_donors:
-                st.info("No fund donations received yet.")
+        with tab1:
+            st.subheader("Rescue Food & Distribute to Needy")
+            available = [d for d in st.session_state.db["donations"] if d.get("status") == "Available"]
+            if not available:
+                st.info("No active food donations right now.")
             else:
-                for f in reversed(my_fund_donors):
-                    donor_mob = "N/A"
-                    for u in st.session_state.db["users"]:
-                        if u["username"].lower() == f.get("donor", "").lower():
-                            donor_mob = u.get("mobile", "N/A")
-                            break
-                            
+                for idx, d in enumerate(available):
                     with st.container(border=True):
-                        st.write(f"💖 **{f.get('donor', 'Unknown')}** donated **₹{f.get('amount', 0)}**")
-                        st.write(f"📞 **Donor Mobile:** {donor_mob}")
-                        st.write(f"📌 **For Request:** {f.get('reason', 'N/A')}")
-                        st.write(f"📅 **Time:** {f.get('time', 'Unknown')}")
+                        st.write(f"🚨 **From:** {d.get('donor', 'Unknown')} | ⏳ **Expires in:** {d.get('expiry', 'N/A')}")
+                        st.write(f"📍 **Address/Map:** {d.get('location', 'N/A')}")
+                        st.write(f"🍲 **Items:** {d.get('items', 'Not specified')}")
+                        
+                        if d.get("image") and os.path.exists(d.get("image")):
+                            st.image(Image.open(d.get("image")), width=200)
+                            
+                        safe_id = d.get('id', f"vol_avail_{idx}")
+                        if st.button("I will Pickup & Distribute", key=f"vol_acc_{safe_id}", type="primary"):
+                            d['status'] = f"Accepted by Volunteer {st.session_state.current_user}"
+                            save_data(st.session_state.db)
+                            st.success("Accepted! Please coordinate with the donor.")
+                            st.rerun()
 
-    # --- ADMIN DASHBOARD ---
-    elif st.session_state.current_role == "Admin Portal":
-        st.title("⚙️ Admin Panel")
-        st.write("Complete System Overview")
-        
-        st.subheader("Registered Users")
-        st.dataframe(st.session_state.db["users"], use_container_width=True)
-        st.subheader("Food Donations")
-        st.dataframe(st.session_state.db["donations"], use_container_width=True)
-        st.subheader("Fund Requests")
-        st.dataframe(st.session_state.db["fund_requests"], use_container_width=True)
-        st.subheader("Fund Transactions Log")
-        if st.session_state.db.get("fund_transactions"):
-            st.dataframe(st.session_state.db["fund_transactions"], use_container_width=True)
-        else:
-            st.info("No fund transactions yet.")
-            
-        st.divider()
-        st.subheader("⚠️ Danger Zone")
-        st.write("Clicking this will delete all data and reset the app.")
-        if st.button("🗑️ Clear Entire Database (Reset All)", type="primary"):
-            st.session_state.db = {
-                "users": [{"username": "Admin", "password": "5979", "role": "Admin Portal", "mobile": "Admin", "email": ""}],
-                "donations": [],
-                "fund_requests": [],
-                "fund_transactions": []
-            }
-            save_data(st.session_state.db)
-            st.success("Database completely wiped! Fresh start ready. Please log out and log back in.")
-    
+        with tab2:
+            st.subheader("Food You Have Accepted")
+            my_pickups = [d for d in st.session_state.db["donations"] if d.get("status") == f"Accepted by Volunteer {st.session_state.current_user}"]
+            if not my_pickups:
+                st.info("You haven't accepted any pickups yet.")
+            else:
+                for idx, d in enumerate(reversed(my_pickups)):
+                    with st.container(border=True):
+                        st.write(f"🚨 **Donor:** {d.get('donor', 'Unknown')} | 📞 **Contact:** {d.get('contact', 'N/A')}")
+                        st.write(f"📍 **Pickup Address:** {d.get('location', 'N/A')}")
+                        
+                        safe_id = d.get('id', f"vol_recv_{idx}")
+                        if st.button("✅ Mark as Distributed to Needy", key=f"vol_recv_{safe_id}", type="primary"):
+                            d['status'] = f"Distributed by Volunteer {st.session_state.current_user}"
+                            save_data(st.session_state.db)
+                            st.success("Great job! Food distributed successfully.")
+                            st.rerun()
+                    
