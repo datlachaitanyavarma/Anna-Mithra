@@ -4,67 +4,9 @@ import urllib.parse
 from supabase import create_client, Client
 
 # ==========================================
-# 1. PAGE CONFIGURATION & UI STYLING
+# 1. PAGE CONFIGURATION
 # ==========================================
-st.set_page_config(page_title="Annamithra - Food Waste Management", layout="wide")
-
-# Custom CSS for Premium Look
-hide_st_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            
-            /* Button Styling */
-            .stButton>button {
-                background-color: #FF4B4B;
-                color: white;
-                border-radius: 8px;
-                padding: 0.5rem 1rem;
-                border: none;
-                transition: 0.3s;
-                font-weight: bold;
-            }
-            .stButton>button:hover {
-                background-color: #FF2B2B;
-                box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
-            }
-            
-            /* Input Fields Styling */
-            .stTextInput>div>div>input, .stNumberInput>div>div>input, .stSelectbox>div>div>select {
-                border-radius: 8px;
-                border: 1px solid #ddd;
-                padding: 0.5rem;
-            }
-            
-            /* Metric Cards (Live Impact) */
-            div[data-testid="stMetricValue"] {
-                color: #FF4B4B;
-                font-size: 2.5rem;
-            }
-            
-            /* Tabs Styling */
-            .stTabs [data-baseweb="tab-list"] {
-                gap: 24px;
-            }
-            .stTabs [data-baseweb="tab"] {
-                height: 50px;
-                white-space: pre-wrap;
-                background-color: transparent;
-                border-radius: 4px 4px 0px 0px;
-                gap: 1px;
-                padding-top: 10px;
-                padding-bottom: 10px;
-                font-size: 1.1rem;
-                font-weight: 600;
-            }
-            .stTabs [aria-selected="true"] {
-                color: #FF4B4B;
-                border-bottom: 3px solid #FF4B4B;
-            }
-            </style>
-            """
-st.markdown(hide_st_style, unsafe_allow_html=True)
+st.set_page_config(page_title="Annamithra - Food Waste Management", page_icon="🍲", layout="wide")
 
 # ==========================================
 # 2. SUPABASE DATABASE CONFIGURATION
@@ -90,355 +32,300 @@ def fetch_data(table_name):
         response = supabase.table(table_name).select("*").execute()
         return response.data
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
         return []
 
 def insert_data(table_name, data):
     try:
         supabase.table(table_name).insert(data).execute()
         return True
-    except Exception as e:
-        st.error(f"Error saving data: {e}")
+    except:
         return False
 
 def update_data(table_name, record_id, data):
     try:
         supabase.table(table_name).update(data).eq("id", record_id).execute()
         return True
-    except Exception as e:
-        st.error(f"Error updating data: {e}")
+    except:
         return False
 
 # ==========================================
-# 4. AUTHENTICATION & REGISTRATION
+# 4. SIDEBAR & AUTHENTICATION
 # ==========================================
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
 if "current_role" not in st.session_state:
     st.session_state.current_role = None
-if "points" not in st.session_state:
-    st.session_state.points = 0
+
+def render_sidebar():
+    try:
+        st.sidebar.image("logo.png", use_container_width=True)
+    except:
+        st.sidebar.write("*(Logo.png missing)*")
+        
+    st.sidebar.markdown("---")
+    
+    if not st.session_state.current_user:
+        st.sidebar.write("🔒 Please login.")
+    else:
+        st.sidebar.success(f"👤 {st.session_state.current_user}")
+        st.sidebar.info(f"Role: {st.session_state.current_role}")
+        
+        if st.sidebar.button("🔄 Refresh Data", use_container_width=True):
+            st.rerun()
+        if st.sidebar.button("🚪 Logout", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+            
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("📍 Vepagunta, AP | 📧 [contact@annamithra.org](mailto:contact@annamithra.org)")
 
 def login_register_page():
-    # Logo Image
-    try:
-        st.image("1000002433.png", width=250)
-    except:
-        pass # Skips if image is missing
-        
-    st.title("Welcome to Annamithra")
-    st.subheader("Bridging the gap between surplus food and the needy.")
+    st.title("Welcome to Annamithra 🤝")
     
-    # Live Impact Dashboard
-    st.markdown("---")
-    st.markdown("### Our Live Impact")
-    col1, col2, col3 = st.columns(3)
-    donations = fetch_data("donations")
-    funds = fetch_data("fund_transactions")
+    tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
+    
     users_data = fetch_data("users")
     
-    total_meals = sum(d.get("veg_serves", 0) + d.get("nv_serves", 0) for d in donations) if donations else 0
-    total_funds = sum(f.get("amount", 0) for f in funds) if funds else 0
-    active_volunteers = len([u for u in users_data if u.get("role") == "Volunteer"]) if users_data else 0
-    
-    col1.metric("Meals Served", f"{total_meals}+")
-    col2.metric("Funds Raised", f"Rs. {total_funds}")
-    col3.metric("Active Volunteers", active_volunteers)
-    st.markdown("---")
-
-    tab1, tab2 = st.tabs(["Login", "Register"])
-    
     with tab1:
-        username = st.text_input("Username", key="log_user")
-        password = st.text_input("Password", type="password", key="log_pass")
-        if st.button("Login", type="primary"):
-            # Hardcoded Admin bypass
-            if username == "Admin" and password == "5979":
-                st.session_state.current_user = "Admin"
-                st.session_state.current_role = "Admin"
-                st.session_state.points = 0
-                st.success("Admin Login Successful!")
-                st.rerun()
-            else:
-                user = next((u for u in users_data if u["username"] == username and u["password"] == password), None)
-                if user:
-                    st.session_state.current_user = user["username"]
-                    st.session_state.current_role = user["role"]
-                    st.session_state.points = user.get("reward_points", 0)
-                    st.success("Login Successful!")
+        with st.container(border=True):
+            username = st.text_input("Username", key="log_user")
+            password = st.text_input("Password", type="password", key="log_pass")
+            if st.button("Login", type="primary", use_container_width=True):
+                if username == "Admin" and password == "5979":
+                    st.session_state.current_user = "Admin"
+                    st.session_state.current_role = "Admin Portal"
                     st.rerun()
                 else:
-                    st.error("Invalid Credentials!")
+                    user = next((u for u in users_data if u["username"] == username and u["password"] == password), None)
+                    if user:
+                        st.session_state.current_user = user["username"]
+                        st.session_state.current_role = user["role"]
+                        st.rerun()
+                    else:
+                        st.error("Invalid Credentials!")
 
     with tab2:
-        new_user = st.text_input("Choose Username", key="reg_user")
-        new_pass = st.text_input("Create Password", type="password", key="reg_pass")
-        role = st.selectbox("Select Role", ["Donor", "NGO/Orphanage", "Volunteer"])
-        mobile = st.text_input("Mobile Number")
-        email = st.text_input("Email ID")
-        blood_group = st.selectbox("Blood Group (Mandatory)", ["Select", "A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"])
-        
-        if st.button("Register"):
-            if not all([new_user, new_pass, mobile, email]) or blood_group == "Select":
-                st.warning("All fields including Blood Group are mandatory!")
-                return
-            if any(u["username"] == new_user for u in users_data):
-                st.error("Username already exists! Please choose another.")
-            else:
-                success = insert_data("users", {
-                    "username": new_user,
-                    "password": new_pass,
-                    "role": role, 
-                    "mobile": mobile,
-                    "email": email,
-                    "blood_group": blood_group,
-                    "reward_points": 0
-                })
-                if success:
-                    st.success("Registration Successful! Please login from the Login tab.")
+        with st.container(border=True):
+            new_user = st.text_input("Choose Username", key="reg_user")
+            new_pass = st.text_input("Create Password", type="password", key="reg_pass")
+            role = st.selectbox("Select Role", ["Donor (Individual/Hotel)", "NGO / Orphanage", "Volunteer"])
+            mobile = st.text_input("Mobile Number")
+            email = st.text_input("Email ID")
+            blood_group = st.selectbox("Blood Group (Mandatory)", ["Select", "A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"])
+            
+            if st.button("Register", use_container_width=True):
+                if not all([new_user, new_pass, mobile, email]) or blood_group == "Select":
+                    st.warning("All fields are mandatory!")
+                elif any(u["username"] == new_user for u in users_data):
+                    st.error("Username already exists!")
+                else:
+                    insert_data("users", {
+                        "username": new_user, "password": new_pass, "role": role, 
+                        "mobile": mobile, "email": email, "blood_group": blood_group
+                    })
+                    st.success("Registration Successful! Please login.")
 
 # ==========================================
 # 5. DONOR DASHBOARD
 # ==========================================
 def donor_dashboard():
-    st.title(f"Welcome, {st.session_state.current_user}!")
-    st.sidebar.success(f"Role: {st.session_state.current_role}\n\nReward Points: {st.session_state.points}")
+    st.title(f"👋 Welcome, {st.session_state.current_user}!")
     
-    tab1, tab2, tab3 = st.tabs(["Donate Food", "Support NGOs", "My Contributions"])
+    tab1, tab2, tab3 = st.tabs(["🍽️ Donate Food", "💰 Support NGOs", "📜 My History"])
     
     with tab1:
-        st.subheader("New Food Donation")
-        contact = st.text_input("Contact Number")
-        items = st.text_area("Food Items (e.g., Rice, Dal, Curry)")
-        category = st.selectbox("Category", ["Cooked Food", "Raw Materials", "Packaged Food"])
+        st.subheader("Submit Surplus Food")
+        st.info("👇 Select Food Category first, then fill the details in the box.")
         
-        col1, col2 = st.columns(2)
-        v_boxes = col1.number_input("Veg Boxes", min_value=0)
-        v_serves = col1.number_input("Veg Serves How Many?", min_value=0)
-        nv_boxes = col2.number_input("Non-Veg Boxes", min_value=0)
-        nv_serves = col2.number_input("Non-Veg Serves How Many?", min_value=0)
+        food_type = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
         
-        expiry = st.text_input("Estimated Expiry Time (e.g., 4 Hours)")
-        location = st.text_area("Pickup Address")
-        
-        if st.button("Submit Donation", type="primary"):
-            if items and location and contact:
-                success = insert_data("donations", {
-                    "donor": st.session_state.current_user,
-                    "contact": contact,
-                    "items": items,
-                    "category": category,
-                    "expiry": expiry,
-                    "veg_boxes": v_boxes,
-                    "veg_serves": v_serves,
-                    "nv_boxes": nv_boxes,
-                    "nv_serves": nv_serves,
-                    "location": location,
-                    "time": get_current_time(),
-                    "status": "Available"
-                })
-                if success:
-                    new_points = st.session_state.points + 10
-                    users_data = fetch_data("users")
-                    user_record = next((u for u in users_data if u["username"] == st.session_state.current_user), None)
-                    if user_record:
-                        update_data("users", user_record["id"], {"reward_points": new_points})
-                    st.session_state.points = new_points
-                    st.success("Thank you! Food donation listed successfully. You earned 10 points!")
-            else:
-                st.error("Please fill all mandatory fields (Items, Contact, Location).")
+        with st.container(border=True):
+            contact = st.text_input("Contact Number (For this pickup) *")
+            items = st.text_area("What food items are you donating? (e.g., Rice, Dal, Chicken Curry) *")
+            
+            v_boxes, v_serves, nv_boxes, nv_serves = 0, 0, 0, 0
+            
+            if food_type in ["Veg", "Both (Veg & Non-Veg)"]:
+                st.markdown("🟢 **Veg Details**")
+                v_boxes = st.number_input("Veg - No. of Boxes", min_value=0, key="vb")
+                v_serves = st.number_input("Veg - Serves (Persons)", min_value=0, key="vs")
+                
+            if food_type in ["Non-Veg", "Both (Veg & Non-Veg)"]:
+                st.markdown("🔴 **Non-Veg Details**")
+                nv_boxes = st.number_input("Non-Veg - No. of Boxes", min_value=0, key="nvb")
+                nv_serves = st.number_input("Non-Veg - Serves (Persons)", min_value=0, key="nvs")
+                
+            address = st.text_input("Pickup Address *")
+            
+            if st.button("Submit Food Details"):
+                if contact and items and address:
+                    insert_data("donations", {
+                        "donor": st.session_state.current_user, "contact": contact, "items": items,
+                        "category": food_type, "veg_boxes": v_boxes, "veg_serves": v_serves,
+                        "nv_boxes": nv_boxes, "nv_serves": nv_serves, "location": address,
+                        "expiry": "N/A", "time": get_current_time(), "status": "Available"
+                    })
+                    st.success("Food Details Submitted Successfully!")
+                else:
+                    st.error("Please fill all mandatory (*) fields.")
 
     with tab2:
-        st.subheader("Active NGO Fund Requests")
-        
-        with st.expander("How to Donate & FAQ (Click to Expand)", expanded=False):
-            st.markdown("""
-            **Step-by-Step Guide:**
-            1. Review the NGO requirements below.
-            2. Enter your desired custom donation amount.
-            3. Scan the QR code OR click the Payment Link to open your UPI app (GPay/PhonePe).
-            4. After a successful payment, enter your 12-digit UTR/Transaction ID.
-            5. Click 'Verify & Confirm'. You and the NGO will receive an instant automated email!
-            
-            **Frequently Asked Questions (FAQ):**
-            * **Does my money go directly to the NGO?** Yes, directly to the NGO's official UPI ID.
-            * **Does Annamithra charge any commission?** No, 100% free, zero-commission platform.
-            * **How do I get my reward points?** Points are credited automatically upon verification.
-            """)
-            
+        st.subheader("NGO Fund Requests")
         requests = fetch_data("fund_requests")
         active_reqs = [r for r in requests if r.get("status") == "Active"]
         
         if not active_reqs:
-            st.info("No active fund requests at the moment.")
+            st.info("No active fund requests right now.")
             
         for req in reversed(active_reqs):
-            with st.container(border=True):
-                st.markdown(f"### {req['ngo']}")
-                st.write(f"**Requirement:** {req['reason']}")
-                
+            with st.expander(f"🏢 {req['ngo']} - Need: {req['reason']}", expanded=True):
                 goal = req['goal']
                 raised = req['raised']
+                
+                st.write(f"**Goal:** ₹{goal} | **Raised:** ₹{raised}")
                 st.progress(min(raised / goal if goal > 0 else 0, 1.0))
-                st.write(f"**Goal:** Rs. {goal} | **Raised:** Rs. {raised} | **Remaining:** Rs. {goal - raised}")
                 
-                share_text = urllib.parse.quote(f"Help {req['ngo']} raise Rs. {goal} for {req['reason']}. Donate securely via Annamithra!")
-                st.markdown(f"[Share this request on WhatsApp](https://wa.me/?text={share_text})")
+                st.info(f"**Payment Details:** UPI ID: {req['upi']}")
+                st.write(f"*Only ₹{goal - raised} left to reach the goal!*")
                 
-                st.divider()
+                # UTR Feature integrated into old UI
+                amount = st.number_input("Donate (₹)", min_value=1, max_value=goal-raised, value=100, key=f"amt_{req['id']}")
+                utr = st.text_input("Enter 12-Digit UTR after payment via app:", key=f"utr_{req['id']}")
                 
-                col1, col2 = st.columns([1, 1])
-                with col1:
-                    st.write("**Make a Secure Payment**")
-                    st.code(f"UPI ID: {req['upi']}")
-                    amount = st.number_input("Enter Amount (Rs)", min_value=1, max_value=goal-raised, value=100, key=f"amt_{req['id']}")
-                    
-                    upi_url = f"upi://pay?pa={req['upi']}&pn={req['ngo'].replace(' ', '%20')}&am={amount}&cu=INR"
-                    st.markdown(f"**[Click Here to Pay Rs. {amount} via App]({upi_url})**")
-                    
-                    utr = st.text_input("Enter 12-Digit UTR Number", key=f"utr_{req['id']}")
-                    if st.button("Verify & Confirm Donation", key=f"btn_{req['id']}", type="primary"):
-                        if len(utr) >= 6:
-                            new_raised = raised + amount
-                            status = "Completed" if new_raised >= goal else "Active"
-                            
-                            update_data("fund_requests", req['id'], {"raised": new_raised, "status": status})
-                            insert_data("fund_transactions", {
-                                "donor": st.session_state.current_user,
-                                "ngo": req['ngo'],
-                                "amount": amount,
-                                "reason": req['reason'],
-                                "time": get_current_time()
-                            })
-                            st.success(f"Verified! Rs. {amount} successfully donated to {req['ngo']}.")
-                            st.info(f"Confirmation emails initiated for {st.session_state.current_user} and {req['ngo']}.")
-                            st.rerun()
-                        else:
-                            st.error("Please enter a valid UTR number to verify your transaction.")
-                with col2:
-                    qr_api = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={urllib.parse.quote(upi_url)}"
-                    st.image(qr_api, caption=f"Scan to pay Rs. {amount}")
+                upi_url = f"upi://pay?pa={req['upi']}&pn={req['ngo'].replace(' ', '%20')}&am={amount}&cu=INR"
+                st.markdown(f"[🚀 Click Here to Pay ₹{amount} via App]({upi_url})")
+                
+                if st.button(f"Donate ₹{amount} & Verify", key=f"btn_{req['id']}"):
+                    if len(utr) >= 6:
+                        new_raised = raised + amount
+                        status = "Completed" if new_raised >= goal else "Active"
+                        update_data("fund_requests", req['id'], {"raised": new_raised, "status": status})
+                        insert_data("fund_transactions", {
+                            "donor": st.session_state.current_user, "ngo": req['ngo'],
+                            "amount": amount, "reason": req['reason'], "time": get_current_time()
+                        })
+                        st.success(f"Donation of ₹{amount} successful! Verified.")
+                        st.rerun()
+                    else:
+                        st.error("Please enter a valid UTR number.")
 
     with tab3:
-        st.subheader("Your Donation History")
+        st.subheader("My Contributions")
         funds = [f for f in fetch_data("fund_transactions") if f["donor"] == st.session_state.current_user]
-        food_history = [d for d in fetch_data("donations") if d["donor"] == st.session_state.current_user]
+        food = [d for d in fetch_data("donations") if d["donor"] == st.session_state.current_user]
         
         st.write("### Financial Contributions")
-        if funds:
-            st.table(funds)
-        else:
-            st.write("No financial contributions yet.")
+        if funds: st.dataframe(funds)
+        else: st.write("No funds donated yet.")
             
-        st.write("### Food Donations")
-        if food_history:
-            st.table(food_history)
-        else:
-            st.write("No food donations yet.")
+        st.write("### Food Contributions")
+        if food: st.dataframe(food)
+        else: st.write("No food donated yet.")
 
 # ==========================================
 # 6. NGO DASHBOARD
 # ==========================================
 def ngo_dashboard():
-    st.title(f"NGO Portal: {st.session_state.current_user}")
-    tab1, tab2 = st.tabs(["Request Funds", "Available Food Alerts"])
+    st.title(f"🏢 {st.session_state.current_user}")
+    
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔔 Available Food", "✅ Accepted Pickups", "📢 Request Funds", "📁 My Fund Requests", "💖 Fund Donors"])
     
     with tab1:
-        st.subheader("Create a New Fund Request")
-        reason = st.text_input("Purpose (e.g., Monthly groceries for 50 children)")
-        goal = st.number_input("Target Amount (Rs)", min_value=100)
-        upi = st.text_input("NGO UPI ID (Ensure this is accurate for direct transfers)")
-        
-        if st.button("Post Request", type="primary"):
-            if reason and goal and upi:
-                success = insert_data("fund_requests", {
-                    "ngo": st.session_state.current_user,
-                    "reason": reason,
-                    "goal": goal,
-                    "raised": 0,
-                    "upi": upi,
-                    "status": "Active"
-                })
-                if success:
-                    st.success("Fund request is now live on the platform!")
-            else:
-                st.error("Please fill in all details.")
-
-    with tab2:
-        st.subheader("Live Food Donations Available")
+        st.subheader("Live Food Alerts")
         donations = [d for d in fetch_data("donations") if d["status"] == "Available"]
         if not donations:
-            st.info("No new food donations available at the moment.")
-            
+            st.info("No active food donations right now.")
         for d in donations:
-            with st.expander(f"Food from {d['donor']} - Loc: {d['location']}"):
-                st.write(f"**Items:** {d['items']}")
-                st.write(f"**Serves:** Veg: {d['veg_serves']} | Non-Veg: {d['nv_serves']}")
-                st.write(f"**Contact:** {d['contact']}")
-                st.write(f"**Expiry Estimate:** {d['expiry']}")
-                
-                if st.button("Accept Donation & Claim", key=f"acc_{d['id']}"):
+            with st.container(border=True):
+                st.write(f"**From:** {d['donor']} | **Items:** {d['items']}")
+                st.write(f"**Loc:** {d['location']} | **Contact:** {d['contact']}")
+                if st.button("Accept Pickup", key=f"acc_{d['id']}"):
                     update_data("donations", d['id'], {"status": "Accepted by " + st.session_state.current_user})
-                    st.success("Donation Accepted! Please contact the donor immediately for pickup coordination.")
+                    st.success("Accepted! Check 'Accepted Pickups' tab.")
                     st.rerun()
+
+    with tab2:
+        st.subheader("Your Accepted Pickups")
+        my_pickups = [d for d in fetch_data("donations") if d["status"] == f"Accepted by {st.session_state.current_user}"]
+        if my_pickups: st.dataframe(my_pickups)
+        else: st.write("No accepted pickups.")
+
+    with tab3:
+        st.subheader("Request Funds")
+        reason = st.text_input("Need (e.g., Groceries, Lunch)")
+        goal = st.number_input("Target Amount (₹)", min_value=100)
+        upi = st.text_input("UPI ID (Ensure accuracy)")
+        if st.button("Submit Fund Request"):
+            if reason and goal and upi:
+                insert_data("fund_requests", {
+                    "ngo": st.session_state.current_user, "reason": reason, "goal": goal,
+                    "raised": 0, "upi": upi, "status": "Active"
+                })
+                st.success("Fund Request Created!")
+            else:
+                st.error("Fill all details.")
+
+    with tab4:
+        st.subheader("My Fund Requests")
+        my_reqs = [r for r in fetch_data("fund_requests") if r["ngo"] == st.session_state.current_user]
+        if my_reqs: st.dataframe(my_reqs)
+        else: st.write("No requests made.")
+
+    with tab5:
+        st.subheader("People who donated to you")
+        my_donors = [f for f in fetch_data("fund_transactions") if f["ngo"] == st.session_state.current_user]
+        if my_donors: st.dataframe(my_donors)
+        else: st.write("No donations received yet.")
 
 # ==========================================
 # 7. ADMIN DASHBOARD
 # ==========================================
 def admin_dashboard():
-    st.title("Admin Portal")
-    st.write("Welcome, Admin! Here you can monitor all platform activities.")
+    st.title("⚙️ Admin Panel")
+    st.write("Complete System Overview")
     
-    tab1, tab2, tab3 = st.tabs(["All Users", "Food Donations", "Fund Requests"])
+    st.subheader("Registered Users")
+    users = fetch_data("users")
+    if users: st.dataframe(users)
     
-    with tab1:
-        st.subheader("Registered Users")
-        users = fetch_data("users")
-        if users:
-            st.dataframe(users)
-        else:
-            st.write("No users registered yet.")
-            
-    with tab2:
-        st.subheader("Food Donations")
-        donations = fetch_data("donations")
-        if donations:
-            st.dataframe(donations)
-        else:
-            st.write("No donations recorded yet.")
-            
-    with tab3:
-        st.subheader("Fund Requests & Transactions")
-        requests = fetch_data("fund_requests")
-        if requests:
-            st.dataframe(requests)
-        else:
-            st.write("No fund requests recorded yet.")
+    st.subheader("Food Donations")
+    donations = fetch_data("donations")
+    if donations: st.dataframe(donations)
+    else: st.write("empty")
+    
+    st.subheader("Fund Requests")
+    reqs = fetch_data("fund_requests")
+    if reqs: st.dataframe(reqs)
+    
+    st.subheader("Fund Transactions Log")
+    trans = fetch_data("fund_transactions")
+    if trans: st.dataframe(trans)
+    
+    st.markdown("---")
+    st.markdown("### ⚠️ Danger Zone")
+    st.write("Clicking this will delete all data and reset the app. *(Requires Supabase Dashboard access to fully wipe tables, but you can manage records there).*")
+    if st.button("🗑️ Clear Entire Database (Reset All)"):
+        st.warning("For security, bulk deletion is disabled in code. Please use Supabase SQL Editor to truncate tables.")
 
 # ==========================================
 # 8. MAIN APP ROUTING
 # ==========================================
 def main():
+    render_sidebar()
+    
     if not st.session_state.current_user:
         login_register_page()
     else:
-        st.sidebar.title("Navigation Menu")
-        if st.sidebar.button("Logout", type="primary"):
-            st.session_state.clear()
-            st.rerun()
-            
         role = st.session_state.current_role
-        if role == "Donor":
+        if "Donor" in role:
             donor_dashboard()
-        elif role == "NGO/Orphanage" or role == "NGO":
+        elif "NGO" in role:
             ngo_dashboard()
-        elif role == "Volunteer":
-            st.title(f"Volunteer Portal: {st.session_state.current_user}")
-            st.info("Volunteer dashboard is active. You can track food pickups here.")
-        elif role == "Admin":
+        elif "Admin" in role:
             admin_dashboard()
         else:
-            st.error("Unknown Role")
+            st.title(f"👋 Welcome, {st.session_state.current_user}!")
+            st.info("Dashboard under construction for this role.")
 
 if __name__ == "__main__":
     main()
