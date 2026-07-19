@@ -1,6 +1,7 @@
 import streamlit as st
 import datetime
 import urllib.parse
+import pandas as pd
 from supabase import create_client, Client
 
 # ==========================================
@@ -48,6 +49,23 @@ def update_data(table_name, record_id, data):
     except:
         return False
 
+# Smart Table Formatter for Beautiful Custom IDs (AM0001, etc.)
+def display_formatted_table(data, prefix="AM"):
+    if not data:
+        st.info("No records found in this category.")
+        return
+    df = pd.DataFrame(data)
+    # Generate Custom Annamithra IDs dynamically
+    df.insert(0, 'Annamithra_ID', [f"{prefix}{str(i+1).zfill(4)}" for i in range(len(df))])
+    # Drop the ugly database ID
+    if 'id' in df.columns:
+        df = df.drop(columns=['id'])
+    # Hide passwords in Admin panel for cleanliness and security
+    if 'password' in df.columns and prefix == "AM-USR":
+        df['password'] = "••••••••"
+        
+    st.dataframe(df, hide_index=True, use_container_width=True)
+
 # ==========================================
 # 4. SIDEBAR & AUTHENTICATION
 # ==========================================
@@ -58,7 +76,7 @@ if "current_role" not in st.session_state:
 
 def render_sidebar():
     try:
-        st.sidebar.image("logo.png", use_container_width=True)
+        st.sidebar.image("Logo.png", use_container_width=True)
     except:
         st.sidebar.write("*(Logo.png missing)*")
         
@@ -188,7 +206,6 @@ def donor_dashboard():
                 st.info(f"**Payment Details:** UPI ID: {req['upi']}")
                 st.write(f"*Only ₹{goal - raised} left to reach the goal!*")
                 
-                # UTR Feature integrated into old UI
                 amount = st.number_input("Donate (₹)", min_value=1, max_value=goal-raised, value=100, key=f"amt_{req['id']}")
                 utr = st.text_input("Enter 12-Digit UTR after payment via app:", key=f"utr_{req['id']}")
                 
@@ -215,12 +232,10 @@ def donor_dashboard():
         food = [d for d in fetch_data("donations") if d["donor"] == st.session_state.current_user]
         
         st.write("### Financial Contributions")
-        if funds: st.dataframe(funds)
-        else: st.write("No funds donated yet.")
+        display_formatted_table(funds, "AM-TXN")
             
         st.write("### Food Contributions")
-        if food: st.dataframe(food)
-        else: st.write("No food donated yet.")
+        display_formatted_table(food, "AM-FD")
 
 # ==========================================
 # 6. NGO DASHBOARD
@@ -247,8 +262,7 @@ def ngo_dashboard():
     with tab2:
         st.subheader("Your Accepted Pickups")
         my_pickups = [d for d in fetch_data("donations") if d["status"] == f"Accepted by {st.session_state.current_user}"]
-        if my_pickups: st.dataframe(my_pickups)
-        else: st.write("No accepted pickups.")
+        display_formatted_table(my_pickups, "AM-PKP")
 
     with tab3:
         st.subheader("Request Funds")
@@ -268,44 +282,61 @@ def ngo_dashboard():
     with tab4:
         st.subheader("My Fund Requests")
         my_reqs = [r for r in fetch_data("fund_requests") if r["ngo"] == st.session_state.current_user]
-        if my_reqs: st.dataframe(my_reqs)
-        else: st.write("No requests made.")
+        display_formatted_table(my_reqs, "AM-REQ")
 
     with tab5:
         st.subheader("People who donated to you")
         my_donors = [f for f in fetch_data("fund_transactions") if f["ngo"] == st.session_state.current_user]
-        if my_donors: st.dataframe(my_donors)
-        else: st.write("No donations received yet.")
+        display_formatted_table(my_donors, "AM-DNR")
 
 # ==========================================
-# 7. ADMIN DASHBOARD
+# 7. PROFESSIONAL ADMIN DASHBOARD
 # ==========================================
 def admin_dashboard():
-    st.title("⚙️ Admin Panel")
-    st.write("Complete System Overview")
+    st.title("⚙️ Admin Dashboard")
+    st.markdown("Monitor and manage platform activities, users, and transactions.")
     
-    st.subheader("Registered Users")
+    # Fetch Data for Metrics
     users = fetch_data("users")
-    if users: st.dataframe(users)
-    
-    st.subheader("Food Donations")
     donations = fetch_data("donations")
-    if donations: st.dataframe(donations)
-    else: st.write("empty")
-    
-    st.subheader("Fund Requests")
     reqs = fetch_data("fund_requests")
-    if reqs: st.dataframe(reqs)
-    
-    st.subheader("Fund Transactions Log")
     trans = fetch_data("fund_transactions")
-    if trans: st.dataframe(trans)
+    
+    # Calculate Live Metrics
+    total_users = len(users) if users else 0
+    total_meals = sum(d.get("veg_serves", 0) + d.get("nv_serves", 0) for d in donations) if donations else 0
+    total_funds = sum(t.get("amount", 0) for t in trans) if trans else 0
     
     st.markdown("---")
-    st.markdown("### ⚠️ Danger Zone")
-    st.write("Clicking this will delete all data and reset the app. *(Requires Supabase Dashboard access to fully wipe tables, but you can manage records there).*")
-    if st.button("🗑️ Clear Entire Database (Reset All)"):
-        st.warning("For security, bulk deletion is disabled in code. Please use Supabase SQL Editor to truncate tables.")
+    
+    # Top KPI Metrics Cards
+    col1, col2, col3 = st.columns(3)
+    col1.metric("👥 Total Registered Users", f"{total_users}")
+    col2.metric("🍽️ Total Meals Donated", f"{total_meals}+")
+    col3.metric("💰 Total Funds Raised", f"₹{total_funds}")
+    
+    st.markdown("---")
+    st.write("### 📊 Database Records")
+    
+    # Professional Tabs for Data Tables
+    tab1, tab2, tab3, tab4 = st.tabs(["👥 Users List", "🍽️ Food Donations", "📢 Fund Requests", "💸 Transactions Log"])
+    
+    with tab1:
+        display_formatted_table(users, "AM-USR")
+    with tab2:
+        display_formatted_table(donations, "AM-FD")
+    with tab3:
+        display_formatted_table(reqs, "AM-REQ")
+    with tab4:
+        display_formatted_table(trans, "AM-TXN")
+        
+    st.markdown("---")
+    
+    # Hidden Danger Zone
+    with st.expander("⚠️ Danger Zone (System Controls)", expanded=False):
+        st.write("Clicking this will attempt to delete all data and reset the app. *(Requires Supabase Dashboard access to fully wipe tables, but you can manage individual records there).*")
+        if st.button("🗑️ Clear Entire Database (Reset All)"):
+            st.warning("For security, bulk deletion is disabled via web. Please use Supabase SQL Editor to truncate tables.")
 
 # ==========================================
 # 8. MAIN APP ROUTING
@@ -329,3 +360,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
