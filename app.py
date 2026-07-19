@@ -71,7 +71,7 @@ if "current_role" not in st.session_state:
 
 def render_sidebar():
     try:
-        st.sidebar.image("Logo.png", use_container_width=True)
+        st.sidebar.image("logo.png", use_container_width=True)
     except:
         st.sidebar.write("*(Logo.png missing)*")
         
