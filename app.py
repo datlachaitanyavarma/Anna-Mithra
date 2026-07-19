@@ -4,9 +4,67 @@ import urllib.parse
 from supabase import create_client, Client
 
 # ==========================================
-# 1. PAGE CONFIGURATION
+# 1. PAGE CONFIGURATION & UI STYLING
 # ==========================================
 st.set_page_config(page_title="Annamithra - Food Waste Management", layout="wide")
+
+# Custom CSS for Premium Look
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            
+            /* Button Styling */
+            .stButton>button {
+                background-color: #FF4B4B;
+                color: white;
+                border-radius: 8px;
+                padding: 0.5rem 1rem;
+                border: none;
+                transition: 0.3s;
+                font-weight: bold;
+            }
+            .stButton>button:hover {
+                background-color: #FF2B2B;
+                box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
+            }
+            
+            /* Input Fields Styling */
+            .stTextInput>div>div>input, .stNumberInput>div>div>input, .stSelectbox>div>div>select {
+                border-radius: 8px;
+                border: 1px solid #ddd;
+                padding: 0.5rem;
+            }
+            
+            /* Metric Cards (Live Impact) */
+            div[data-testid="stMetricValue"] {
+                color: #FF4B4B;
+                font-size: 2.5rem;
+            }
+            
+            /* Tabs Styling */
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 24px;
+            }
+            .stTabs [data-baseweb="tab"] {
+                height: 50px;
+                white-space: pre-wrap;
+                background-color: transparent;
+                border-radius: 4px 4px 0px 0px;
+                gap: 1px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                font-size: 1.1rem;
+                font-weight: 600;
+            }
+            .stTabs [aria-selected="true"] {
+                color: #FF4B4B;
+                border-bottom: 3px solid #FF4B4B;
+            }
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # ==========================================
 # 2. SUPABASE DATABASE CONFIGURATION
@@ -64,9 +122,9 @@ if "points" not in st.session_state:
 def login_register_page():
     # Logo Image
     try:
-        st.image("logo.png", width=250)
+        st.image("1000002433.png", width=250)
     except:
-        pass # Skips if image is missing to prevent crash
+        pass # Skips if image is missing
         
     st.title("Welcome to Annamithra")
     st.subheader("Bridging the gap between surplus food and the needy.")
@@ -384,4 +442,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                
