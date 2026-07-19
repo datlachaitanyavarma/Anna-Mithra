@@ -147,7 +147,7 @@ if not st.session_state.logged_in:
 
 else:
     # ==========================================
-    # --- ADMIN DASHBOARD (RESTORED) ---
+    # --- ADMIN DASHBOARD ---
     # ==========================================
     if st.session_state.current_role == "Admin Portal":
         st.title("👑 Admin Portal - Master Data")
@@ -187,7 +187,6 @@ else:
                 
                 v_boxes = v_serves = nv_boxes = nv_serves = 0
                 
-                # 🔥 RESTORED COLORS FOR VEG & NON-VEG
                 if food_category in ["Veg", "Both (Veg & Non-Veg)"]:
                     st.markdown("🟢 **Veg Details**")
                     v_boxes = st.number_input("Veg - No. of Boxes", min_value=0, step=1)
@@ -198,10 +197,11 @@ else:
                     nv_boxes = st.number_input("Non-Veg - No. of Boxes", min_value=0, step=1)
                     nv_serves = st.number_input("Non-Veg - Serves (Persons)", min_value=0, step=1)
                 
-                # 🔥 GOOGLE MAPS LOCATION BUTTON (HTML/JS TRICK)
+                # 🔥 GOOGLE MAPS LOCATION BUTTON WITH COPY FEATURE
                 st.markdown("📍 **Get exact location for easy pickup:**")
                 components.html("""
                     <script>
+                    var mapLink = "";
                     function getLocation() {
                         if (navigator.geolocation) {
                             navigator.geolocation.getCurrentPosition(showPosition, showError);
@@ -210,16 +210,25 @@ else:
                         }
                     }
                     function showPosition(position) {
-                        var link = "https://maps.google.com/?q=" + position.coords.latitude + "," + position.coords.longitude;
-                        document.getElementById("loc").innerHTML = "<b>Copy this link:</b> <a href='" + link + "' target='_blank'>" + link + "</a>";
+                        mapLink = "https://maps.google.com/?q=" + position.coords.latitude + "," + position.coords.longitude;
+                        document.getElementById("loc").innerHTML = 
+                            "<b>Link:</b> <a href='" + mapLink + "' target='_blank'>" + mapLink + "</a>" + 
+                            "<br><br><button onclick='copyToClipboard()' style='padding:8px; background-color:#008CBA; color:white; border:none; border-radius:5px; cursor:pointer;'>📋 Copy Link</button>";
                     }
                     function showError(error) {
                         document.getElementById("loc").innerHTML = "Please allow location access.";
                     }
+                    function copyToClipboard() {
+                        navigator.clipboard.writeText(mapLink).then(function() {
+                            alert("Link Copied! Paste it in the box below.");
+                        }).catch(function(err) {
+                            alert("Copy failed. Please copy manually.");
+                        });
+                    }
                     </script>
-                    <button onclick="getLocation()" style="padding:10px; background-color:#4CAF50; color:white; border:none; border-radius:5px; cursor:pointer;">🧭 Click Here to Get My Current Location Map Link</button>
+                    <button onclick="getLocation()" style="padding:10px; background-color:#4CAF50; color:white; border:none; border-radius:5px; cursor:pointer;">🧭 1. Get My Location</button>
                     <p id="loc" style="font-family:sans-serif; font-size:14px; margin-top:10px;"></p>
-                """, height=85)
+                """, height=120)
                 
                 location = st.text_input("Paste the copied Google Maps Link or Type Address here *")
                 
@@ -280,11 +289,10 @@ else:
                         st.write(f"**Items:** {d.get('items', 'Not specified')} (Expires in {d.get('expiry', 'Unknown')})")
 
     # ==========================================
-    # --- NGO DASHBOARD (RESTORED OLD UI) ---
+    # --- NGO DASHBOARD ---
     # ==========================================
     elif st.session_state.current_role == "NGO / Orphanage":
         st.title(f"🏢 {st.session_state.current_user}")
-        # 🔥 RESTORED ALL 5 TABS
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔔 Available Food", "✅ Accepted Pickups", "📢 Request Funds", "📂 My Fund Requests", "💖 Fund Donors"])
         
         with tab1:
@@ -392,4 +400,21 @@ else:
                             save_data(st.session_state.db)
                             st.success("Accepted! Please coordinate with the donor.")
                             st.rerun()
-                                                    
+
+        with tab2:
+            st.subheader("Food You Have Accepted")
+            my_pickups = [d for d in st.session_state.db["donations"] if d.get("status") == f"Accepted by Volunteer {st.session_state.current_user}"]
+            if not my_pickups:
+                st.info("You haven't accepted any pickups yet.")
+            else:
+                for idx, d in enumerate(reversed(my_pickups)):
+                    with st.container(border=True):
+                        st.write(f"🚨 **Donor:** {d.get('donor', 'Unknown')} | 📞 **Contact:** {d.get('contact', 'N/A')}")
+                        st.write(f"📍 **Pickup Address:** {d.get('location', 'N/A')}")
+                        
+                        safe_id = d.get('id', f"vol_recv_{idx}")
+                        if st.button("✅ Mark as Distributed to Needy", key=f"vol_recv_{safe_id}", type="primary"):
+                            d['status'] = f"Distributed by Volunteer {st.session_state.current_user}"
+                            save_data(st.session_state.db)
+                            st.success("Great job! Food distributed successfully.")
+                            st.rerun()
