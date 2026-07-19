@@ -49,21 +49,16 @@ def update_data(table_name, record_id, data):
     except:
         return False
 
-# Smart Table Formatter for Beautiful Custom IDs (AM0001, etc.)
 def display_formatted_table(data, prefix="AM"):
     if not data:
         st.info("No records found in this category.")
         return
     df = pd.DataFrame(data)
-    # Generate Custom Annamithra IDs dynamically
     df.insert(0, 'Annamithra_ID', [f"{prefix}{str(i+1).zfill(4)}" for i in range(len(df))])
-    # Drop the ugly database ID
     if 'id' in df.columns:
         df = df.drop(columns=['id'])
-    # Hide passwords in Admin panel for cleanliness and security
     if 'password' in df.columns and prefix == "AM-USR":
         df['password'] = "••••••••"
-        
     st.dataframe(df, hide_index=True, use_container_width=True)
 
 # ==========================================
@@ -76,7 +71,7 @@ if "current_role" not in st.session_state:
 
 def render_sidebar():
     try:
-        st.sidebar.image("logo.png", use_container_width=True)
+        st.sidebar.image("Logo.png", use_container_width=True)
     except:
         st.sidebar.write("*(Logo.png missing)*")
         
@@ -173,14 +168,23 @@ def donor_dashboard():
                 nv_boxes = st.number_input("Non-Veg - No. of Boxes", min_value=0, key="nvb")
                 nv_serves = st.number_input("Non-Veg - Serves (Persons)", min_value=0, key="nvs")
                 
-            address = st.text_input("Pickup Address *")
+            address = st.text_area("Pickup Address (Door No, Street Name) *")
             
-            if st.button("Submit Food Details"):
+            # --- Google Maps Location Feature ---
+            st.markdown("##### 📍 Share Exact Location (Optional but helpful)")
+            st.info("Step 1: Click the link below to open Maps.\n\nStep 2: Copy your location link.\n\nStep 3: Paste it in the box below.")
+            st.markdown("👉 **[Open Google Maps to Copy Link](https://maps.google.com/)**")
+            gmaps_link = st.text_input("Paste Google Maps Link Here 🔗")
+            
+            if st.button("Submit Food Details", type="primary"):
                 if contact and items and address:
+                    # Combine address and maps link for database storage
+                    final_location = f"{address} | MapsLink: {gmaps_link}" if gmaps_link else address
+                    
                     insert_data("donations", {
                         "donor": st.session_state.current_user, "contact": contact, "items": items,
                         "category": food_type, "veg_boxes": v_boxes, "veg_serves": v_serves,
-                        "nv_boxes": nv_boxes, "nv_serves": nv_serves, "location": address,
+                        "nv_boxes": nv_boxes, "nv_serves": nv_serves, "location": final_location,
                         "expiry": "N/A", "time": get_current_time(), "status": "Available"
                     })
                     st.success("Food Details Submitted Successfully!")
@@ -250,10 +254,21 @@ def ngo_dashboard():
         donations = [d for d in fetch_data("donations") if d["status"] == "Available"]
         if not donations:
             st.info("No active food donations right now.")
+            
         for d in donations:
             with st.container(border=True):
                 st.write(f"**From:** {d['donor']} | **Items:** {d['items']}")
-                st.write(f"**Loc:** {d['location']} | **Contact:** {d['contact']}")
+                
+                # Smart Google Maps Link Display
+                if " | MapsLink: " in d['location']:
+                    address_part, link_part = d['location'].split(" | MapsLink: ")
+                    st.write(f"**Loc:** {address_part}")
+                    st.markdown(f"**[📍 Open in Google Maps (Navigate)]({link_part})**")
+                else:
+                    st.write(f"**Loc:** {d['location']}")
+                    
+                st.write(f"**Contact:** {d['contact']}")
+                
                 if st.button("Accept Pickup", key=f"acc_{d['id']}"):
                     update_data("donations", d['id'], {"status": "Accepted by " + st.session_state.current_user})
                     st.success("Accepted! Check 'Accepted Pickups' tab.")
@@ -296,20 +311,16 @@ def admin_dashboard():
     st.title("⚙️ Admin Dashboard")
     st.markdown("Monitor and manage platform activities, users, and transactions.")
     
-    # Fetch Data for Metrics
     users = fetch_data("users")
     donations = fetch_data("donations")
     reqs = fetch_data("fund_requests")
     trans = fetch_data("fund_transactions")
     
-    # Calculate Live Metrics
     total_users = len(users) if users else 0
     total_meals = sum(d.get("veg_serves", 0) + d.get("nv_serves", 0) for d in donations) if donations else 0
     total_funds = sum(t.get("amount", 0) for t in trans) if trans else 0
     
     st.markdown("---")
-    
-    # Top KPI Metrics Cards
     col1, col2, col3 = st.columns(3)
     col1.metric("👥 Total Registered Users", f"{total_users}")
     col2.metric("🍽️ Total Meals Donated", f"{total_meals}+")
@@ -318,7 +329,6 @@ def admin_dashboard():
     st.markdown("---")
     st.write("### 📊 Database Records")
     
-    # Professional Tabs for Data Tables
     tab1, tab2, tab3, tab4 = st.tabs(["👥 Users List", "🍽️ Food Donations", "📢 Fund Requests", "💸 Transactions Log"])
     
     with tab1:
@@ -331,10 +341,8 @@ def admin_dashboard():
         display_formatted_table(trans, "AM-TXN")
         
     st.markdown("---")
-    
-    # Hidden Danger Zone
     with st.expander("⚠️ Danger Zone (System Controls)", expanded=False):
-        st.write("Clicking this will attempt to delete all data and reset the app. *(Requires Supabase Dashboard access to fully wipe tables, but you can manage individual records there).*")
+        st.write("Clicking this will attempt to delete all data and reset the app.")
         if st.button("🗑️ Clear Entire Database (Reset All)"):
             st.warning("For security, bulk deletion is disabled via web. Please use Supabase SQL Editor to truncate tables.")
 
@@ -360,4 +368,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+                                 
