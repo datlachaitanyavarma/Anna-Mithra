@@ -60,7 +60,7 @@ def get_user_email(username, users_data):
 def get_emails_by_role(role, users_data):
     return [u["email"] for u in users_data if u.get("role") == role and "email" in u]
 
-# Advanced Email Sender (Emojis removed from subjects for anti-spam)
+# Advanced Email Sender (TLS - Port 587 with Error Handling)
 def send_email_notification(to_email, subject, body, bcc_list=None):
     st.toast(f"📧 Triggering automated emails...")
     try:
@@ -75,11 +75,15 @@ def send_email_notification(to_email, subject, body, bcc_list=None):
         if bcc_list:
             msg['Bcc'] = ", ".join(bcc_list)
         
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
             smtp.login(sender_email, password)
             smtp.send_message(msg)
+            
+        st.toast("✅ Email Delivered Successfully!")
     except Exception as e:
-        pass 
+        st.error(f"❌ Email Failed! Error: {e}")
 
 # Admin Dashboard Table Formatter
 def display_formatted_table(data, prefix="AM"):
@@ -180,7 +184,6 @@ def login_register_page():
                         st.session_state.current_user = user["username"]
                         st.session_state.current_role = user["role"]
                         
-                        # Trigger Login Email (No Emojis in Subject)
                         user_email = user.get("email", "annamithra.official@gmail.com")
                         body = f"Hello {user['username']},\n\nA successful login was detected on your Annamithra account at {get_current_time()}.\n\nIf this was you, no action is needed."
                         send_email_notification(user_email, "Security Alert: Login Detected", body)
@@ -249,9 +252,7 @@ def donor_dashboard():
                     
                     alert_recipients = volunteers + ngos
                     
-                    # Mail to Donor
                     send_email_notification(donor_email, "Food Donation Listed", f"Dear {st.session_state.current_user},\n\nYour food donation has been successfully listed. An NGO or Volunteer will accept it soon.\n\nThank you!")
-                    # BCC Mail to all NGOs and Volunteers
                     if alert_recipients:
                         send_email_notification("annamithra.official@gmail.com", "New Food Available for Pickup", f"Hello,\n\nNew food has been listed by {st.session_state.current_user}.\n\nItems: {items}\nAddress: {address}\n\nPlease check your Annamithra dashboard to accept the pickup.", bcc_list=alert_recipients)
                 else:
@@ -366,7 +367,7 @@ def ngo_dashboard():
                 st.write(f"**Donor:** {p['donor']} | **Contact:** {p['contact']}")
                 st.write(f"**Items:** {p['items']}")
                 if " | MapsLink: " in p['location']:
-                    st.markdown(f"**[Navigate Location]({p['location'].split(' | MapsLink: ')[1]})**")
+                    st.markdown(f"**[📍 Navigate Location]({p['location'].split(' | MapsLink: ')[1]})**")
                 
                 st.warning("Make sure you reach the location before clicking this button.")
                 if st.button("Mark as 'Reached Location' (Completed)", key=f"reach_{p['id']}"):
@@ -380,7 +381,7 @@ def ngo_dashboard():
                     send_email_notification(ngo_email, "Pickup Completed", f"Dear {st.session_state.current_user},\n\nYou have successfully completed the pickup from {p['donor']}.")
                     send_email_notification(donor_email, "Food Pickup Completed", f"Dear {p['donor']},\n\n{st.session_state.current_user} has successfully reached the location and picked up your food.\n\nThank you for preventing food waste!")
                     st.rerun()
-                    
+
     with tab3:
         st.subheader("Request Funds")
         reason = st.text_input("Need (e.g., Groceries, Lunch)")
@@ -447,5 +448,5 @@ def main():
         elif "Admin" in role: admin_dashboard()
         else: st.info("Dashboard under construction.")
 
-if __name__ == "__main__": main()
-    
+if __name__ == "__main__": 
+    main()
