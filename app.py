@@ -64,8 +64,8 @@ def get_emails_by_role(role, users_data):
 def send_email_notification(to_email, subject, body, bcc_list=None):
     st.toast(f"📧 Triggering automated emails...")
     try:
-        sender_email = "annamithra.official@gmail.com" 
-        password = "kajhmtyhudbrzils" 
+        sender_email = "annamithra.alert@gmail.com" 
+        password = "hdbbkvxqmstitoyu" 
         
         msg = EmailMessage()
         msg.set_content(body)
