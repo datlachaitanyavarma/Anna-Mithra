@@ -1,10 +1,9 @@
-import streamlit as st
+Import streamlit as st
 import datetime
 import urllib.parse
 import pandas as pd
 import streamlit.components.v1 as components
 import smtplib
-import requests  # Added for SMS
 from email.message import EmailMessage
 from supabase import create_client, Client
 
@@ -14,13 +13,10 @@ from supabase import create_client, Client
 st.set_page_config(page_title="Annamithra - Food Waste Management", page_icon="🍲", layout="wide")
 
 # ==========================================
-# 2. CONFIGURATION (Supabase & SMS)
+# 2. SUPABASE DATABASE CONFIGURATION
 # ==========================================
 SUPABASE_URL = "https://fgqwfndywylzckgmtqgr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncXdmbmR5d3lsemNrZ210cWdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0NzAxOTYsImV4cCI6MjEwMDA0NjE5Nn0.0-gAsjS5DHrtet6y0h0WKCnGmtQfKcoi9H2inHAGguE"
-
-# Fallback to direct key if not found in secrets.toml (for instant testing)
-FAST2SMS_API_KEY = st.secrets.get("FAST2SMS_API_KEY", "DtK7gSw6Rdl2HGyv4mN9bacXxMjohzpqW03rOTZe5PnYUfLiJCNlPCOLrEHZR79kAFJmbyxefvoYhdti")
 
 @st.cache_resource
 def init_connection():
@@ -30,7 +26,7 @@ supabase: Client = init_connection()
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 # ==========================================
-# 3. HELPER FUNCTIONS (DB, Email & SMS)
+# 3. HELPER FUNCTIONS & EMAILS
 # ==========================================
 def get_current_time():
     return datetime.datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
@@ -61,14 +57,10 @@ def get_user_email(username, users_data):
     user = next((u for u in users_data if u["username"] == username), None)
     return user["email"] if user and "email" in user else "annamithra.official@gmail.com"
 
-def get_user_mobile(username, users_data):
-    user = next((u for u in users_data if u["username"] == username), None)
-    return user["mobile"] if user and "mobile" in user else None
-
 def get_emails_by_role(role, users_data):
     return [u["email"] for u in users_data if u.get("role") == role and "email" in u]
 
-# Advanced Email Sender
+# Advanced Email Sender (TLS - Port 587 with Error Handling)
 def send_email_notification(to_email, subject, body, bcc_list=None):
     st.toast(f"📧 Triggering automated emails...")
     try:
@@ -92,30 +84,6 @@ def send_email_notification(to_email, subject, body, bcc_list=None):
         st.toast("✅ Email Delivered Successfully!")
     except Exception as e:
         st.error(f"❌ Email Failed! Error: {e}")
-
-# --- SMS SENDER FUNCTION ---
-def send_sms_notification(phone_number, message_text):
-    st.toast("📱 Triggering SMS alert...")
-    try:
-        url = "https://www.fast2sms.com/dev/bulkV2"
-        payload = {
-            "route": "q",
-            "message": message_text,
-            "language": "english",
-            "flash": 0,
-            "numbers": phone_number,
-        }
-        headers = {
-            "authorization": FAST2SMS_API_KEY,
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
-        response = requests.post(url, data=payload, headers=headers)
-        if response.status_code == 200:
-            st.toast("✅ SMS Delivered Successfully!")
-        else:
-            st.error(f"❌ SMS Failed! Response: {response.text}")
-    except Exception as e:
-        st.error(f"❌ SMS System Error: {e}")
 
 # Admin Dashboard Table Formatter
 def display_formatted_table(data, prefix="AM"):
@@ -216,15 +184,9 @@ def login_register_page():
                         st.session_state.current_user = user["username"]
                         st.session_state.current_role = user["role"]
                         
-                        # TRIGGER 1: SMS & Email on Login
-                        user_mobile = user.get("mobile")
                         user_email = user.get("email", "annamithra.official@gmail.com")
-                        
                         body = f"Hello {user['username']},\n\nA successful login was detected on your Annamithra account at {get_current_time()}.\n\nIf this was you, no action is needed."
                         send_email_notification(user_email, "Security Alert: Login Detected", body)
-                        
-                        if user_mobile:
-                            send_sms_notification(user_mobile, f"Annamithra: Hello {username}, successful login detected at {get_current_time()}.")
                         
                         st.rerun()
                     else:
@@ -235,7 +197,7 @@ def login_register_page():
             new_user = st.text_input("Choose Username", key="reg_user")
             new_pass = st.text_input("Create Password", type="password", key="reg_pass")
             role = st.selectbox("Select Role", ["Donor (Individual/Hotel)", "NGO / Orphanage", "Volunteer"])
-            mobile = st.text_input("Mobile Number (10 digits)")
+            mobile = st.text_input("Mobile Number")
             email = st.text_input("Email ID")
             blood_group = st.selectbox("Blood Group", ["Select", "A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"])
             
@@ -261,7 +223,7 @@ def donor_dashboard():
         food_type = st.radio("Category of Food", ["Veg", "Non-Veg", "Both (Veg & Non-Veg)"], horizontal=True)
         
         with st.container(border=True):
-            contact = st.text_input("Contact Number (For SMS Alerts) *")
+            contact = st.text_input("Contact Number *")
             items = st.text_area("Food Items (e.g., Rice, Dal) *")
             v_boxes = st.number_input("Veg Boxes", min_value=0) if "Veg" in food_type else 0
             v_serves = st.number_input("Veg Serves", min_value=0) if "Veg" in food_type else 0
@@ -281,9 +243,8 @@ def donor_dashboard():
                         "nv_boxes": nv_boxes, "nv_serves": nv_serves, "location": final_loc,
                         "expiry": "N/A", "time": get_current_time(), "status": "Available"
                     })
-                    st.success("Food Details Submitted! SMS & Emails dispatched.")
+                    st.success("Food Details Submitted!")
                     
-                    # Email & SMS Trigger 2: Food Submission
                     users_data = fetch_data("users")
                     donor_email = get_user_email(st.session_state.current_user, users_data)
                     volunteers = get_emails_by_role("Volunteer", users_data)
@@ -294,9 +255,6 @@ def donor_dashboard():
                     send_email_notification(donor_email, "Food Donation Listed", f"Dear {st.session_state.current_user},\n\nYour food donation has been successfully listed. An NGO or Volunteer will accept it soon.\n\nThank you!")
                     if alert_recipients:
                         send_email_notification("annamithra.official@gmail.com", "New Food Available for Pickup", f"Hello,\n\nNew food has been listed by {st.session_state.current_user}.\n\nItems: {items}\nAddress: {address}\n\nPlease check your Annamithra dashboard to accept the pickup.", bcc_list=alert_recipients)
-                    
-                    # Send SMS to Donor
-                    send_sms_notification(contact, f"Annamithra: Thank you {st.session_state.current_user}. Your food details are submitted. NGOs will contact you soon.")
                 else:
                     st.error("Fill all mandatory (*) fields including Map Link.")
 
@@ -384,27 +342,17 @@ def ngo_dashboard():
                 
                 if st.button("Accept Pickup", key=f"acc_{d['id']}"):
                     update_data("donations", d['id'], {"status": f"Accepted by {st.session_state.current_user}"})
-                    st.success("Accepted! Check 'Accepted Pickups' tab. SMS alerts sent.")
+                    st.success("Accepted! Check 'Accepted Pickups' tab.")
                     
                     users_data = fetch_data("users")
                     ngo_email = get_user_email(st.session_state.current_user, users_data)
-                    ngo_mobile = get_user_mobile(st.session_state.current_user, users_data)
                     donor_email = get_user_email(d['donor'], users_data)
                     volunteers = get_emails_by_role("Volunteer", users_data)
                     
-                    # TRIGGER 3: SMS & Email when NGO accepts food
                     send_email_notification(ngo_email, "Pickup Accepted", f"Dear {st.session_state.current_user},\n\nYou have accepted the food pickup from {d['donor']}. Please collect it soon.")
                     send_email_notification(donor_email, "Food Accepted by NGO", f"Dear {d['donor']},\n\nGood news! {st.session_state.current_user} has accepted your food donation and will pick it up soon.")
                     if volunteers:
                         send_email_notification("annamithra.official@gmail.com", "Update: Food Accepted", f"Hello Volunteers,\n\nThe food listed by {d['donor']} has been accepted by {st.session_state.current_user} and is no longer available.", bcc_list=volunteers)
-                    
-                    # SMS to Donor
-                    donor_phone = d['contact']
-                    send_sms_notification(donor_phone, f"Annamithra: Your food donation has been accepted by {st.session_state.current_user}. They are on the way for pickup!")
-                    
-                    # SMS to NGO
-                    if ngo_mobile:
-                        send_sms_notification(ngo_mobile, f"Annamithra: You accepted food from {d['donor']}. Contact them at {d['contact']} for pickup.")
                     
                     st.rerun()
 
@@ -424,25 +372,14 @@ def ngo_dashboard():
                 st.warning("Make sure you reach the location before clicking this button.")
                 if st.button("Mark as 'Reached Location' (Completed)", key=f"reach_{p['id']}"):
                     update_data("donations", p['id'], {"status": f"Completed by {st.session_state.current_user}"})
-                    st.success("Status Updated: Pickup Completed! SMS Sent.")
+                    st.success("Status Updated: Pickup Completed!")
                     
                     users_data = fetch_data("users")
                     ngo_email = get_user_email(st.session_state.current_user, users_data)
-                    ngo_mobile = get_user_mobile(st.session_state.current_user, users_data)
                     donor_email = get_user_email(p['donor'], users_data)
                     
-                    # TRIGGER 4: SMS & Email when food is reached/completed
                     send_email_notification(ngo_email, "Pickup Completed", f"Dear {st.session_state.current_user},\n\nYou have successfully completed the pickup from {p['donor']}.")
                     send_email_notification(donor_email, "Food Pickup Completed", f"Dear {p['donor']},\n\n{st.session_state.current_user} has successfully reached the location and picked up your food.\n\nThank you for preventing food waste!")
-                    
-                    # SMS to Donor
-                    donor_phone = p['contact']
-                    send_sms_notification(donor_phone, f"Annamithra: {st.session_state.current_user} has successfully picked up your food. Thank you for preventing food waste!")
-                    
-                    # SMS to NGO
-                    if ngo_mobile:
-                        send_sms_notification(ngo_mobile, f"Annamithra: Pickup from {p['donor']} marked as completed. Great job!")
-                        
                     st.rerun()
 
     with tab3:
